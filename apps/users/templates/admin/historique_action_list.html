@@ -1,0 +1,191 @@
+{% extends "admin/change_list.html" %}
+
+{% block content %}
+<div class="historique-layout">
+  <section class="historique-panel">
+    <h3>Filtrer les logs</h3>
+    <label class="historique-label" for="filtre-action">Action</label>
+    <select id="filtre-action" class="historique-input">
+      <option value="">Toutes les actions</option>
+      <option value="CONNEXION">Connexion</option>
+      <option value="DECONNEXION">Deconnexion</option>
+      <option value="CONNEXION_ECHEC">Connexion echouee</option>
+      <option value="OTP_ECHEC">OTP echoue</option>
+      <option value="TOTP_ACTIVE">TOTP active</option>
+      <option value="DOCUMENT_AJOUT">Document ajoute</option>
+      <option value="DOCUMENT_MODIFICATION">Document modifie</option>
+      <option value="DOCUMENT_SUPPRESSION">Document supprime</option>
+      <option value="UTILISATEUR_CREATION">Utilisateur cree</option>
+      <option value="UTILISATEUR_MODIF">Utilisateur modifie</option>
+      <option value="UTILISATEUR_DESACTIVE">Utilisateur desactive</option>
+    </select>
+
+    <label class="historique-label" for="filtre-statut">Statut</label>
+    <select id="filtre-statut" class="historique-input">
+      <option value="">Tous les statuts</option>
+      <option value="succes">Succes</option>
+      <option value="echec">Echec</option>
+    </select>
+
+    <button type="button" class="historique-button" onclick="chargerLogs()">
+      Charger les logs
+    </button>
+  </section>
+
+  <section class="historique-panel" id="stats-box">
+    <h3>Stats 30 derniers jours</h3>
+    <p class="historique-muted">Cliquez sur "Charger les logs" pour afficher les statistiques.</p>
+  </section>
+</div>
+
+<section class="historique-table-wrap">
+  <table class="historique-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Action</th>
+        <th>Utilisateur</th>
+        <th>Type</th>
+        <th>Statut</th>
+        <th>IP</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody id="logs-body">
+      <tr>
+        <td colspan="7" class="historique-empty">
+          Utilisez les filtres ci-dessus pour charger les logs.
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<script>
+const BADGE_COLORS = {
+  CONNEXION:             { bg: "#28a745", label: "Connexion" },
+  DECONNEXION:           { bg: "#6c757d", label: "Deconnexion" },
+  CONNEXION_ECHEC:       { bg: "#dc3545", label: "Connexion echouee" },
+  OTP_ECHEC:             { bg: "#dc3545", label: "OTP echoue" },
+  TOTP_ACTIVE:           { bg: "#007bff", label: "TOTP active" },
+  TOTP_ECHEC:            { bg: "#dc3545", label: "TOTP echoue" },
+  DOCUMENT_AJOUT:        { bg: "#17a2b8", label: "Doc ajoute" },
+  DOCUMENT_MODIFICATION: { bg: "#fd7e14", label: "Doc modifie" },
+  DOCUMENT_SUPPRESSION:  { bg: "#dc3545", label: "Doc supprime" },
+  UTILISATEUR_CREATION:  { bg: "#6f42c1", label: "User cree" },
+  UTILISATEUR_MODIF:     { bg: "#fd7e14", label: "User modifie" },
+  UTILISATEUR_DESACTIVE: { bg: "#dc3545", label: "User desactive" }
+};
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+async function chargerLogs() {
+  const action = document.getElementById("filtre-action").value;
+  const statut = document.getElementById("filtre-statut").value;
+  let url = "{% url 'admin:historique_action_api' %}?limit=100";
+
+  if (action) {
+    url += `&action=${encodeURIComponent(action)}`;
+  }
+  if (statut) {
+    url += `&statut=${encodeURIComponent(statut)}`;
+  }
+
+  const tbody = document.getElementById("logs-body");
+  tbody.innerHTML = `
+    <tr>
+      <td colspan="7" class="historique-empty">Chargement...</td>
+    </tr>
+  `;
+
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    afficherLogs(data.results || []);
+    chargerStats();
+  } catch (error) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="historique-error">Erreur de chargement: ${escapeHtml(error)}</td>
+      </tr>
+    `;
+  }
+}
+
+function afficherLogs(logs) {
+  const tbody = document.getElementById("logs-body");
+  if (!logs.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" class="historique-empty">Aucun log trouve.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = logs.map((log, index) => {
+    const badge = BADGE_COLORS[log.action] || { bg: "#6c757d", label: log.action || "Inconnue" };
+    const statut = log.statut === "succes"
+      ? '<span class="historique-ok">Succes</span>'
+      : '<span class="historique-ko">Echec</span>';
+    const details = log.details && Object.keys(log.details).length
+      ? `<code>${escapeHtml(JSON.stringify(log.details).slice(0, 120))}</code>`
+      : "-";
+    const rowClass = index % 2 === 0 ? "" : "historique-row-alt";
+    const createdAt = log.created_at
+      ? new Date(log.created_at).toLocaleString("fr-FR")
+      : "-";
+
+    return `
+      <tr class="${rowClass}">
+        <td>${escapeHtml(createdAt)}</td>
+        <td><span class="historique-badge" style="background:${badge.bg};">${escapeHtml(badge.label)}</span></td>
+        <td>${log.user_email ? escapeHtml(log.user_email) : '<em class="historique-muted">Anonyme</em>'}</td>
+        <td>${escapeHtml(log.user_type || "-")}</td>
+        <td>${statut}</td>
+        <td><span class="historique-mono">${escapeHtml(log.ip_address || "-")}</span></td>
+        <td>${details}</td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function chargerStats() {
+  try {
+    const res = await fetch("{% url 'admin:historique_action_stats' %}");
+    const data = await res.json();
+    const box = document.getElementById("stats-box");
+    const rows = (data.stats || []).map((item) => `
+      <tr>
+        <td>${escapeHtml(BADGE_COLORS[item.action]?.label || item.action)}</td>
+        <td class="historique-stat-total">${escapeHtml(item.total)}</td>
+        <td class="historique-stat-fail">${item.echecs ? escapeHtml(item.echecs) : "-"}</td>
+      </tr>
+    `).join("");
+
+    box.innerHTML = `
+      <h3>Stats - ${escapeHtml(data.periode || "periode inconnue")}</h3>
+      <table class="historique-stats-table">
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Total</th>
+            <th>Echecs</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  } catch (error) {
+    console.warn("Stats MongoDB indisponibles", error);
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bienvenue</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+            border-radius: 10px 10px 0 0;
+        }
+        .content {
+            background: #f9fafb;
+            padding: 30px;
+            border-radius: 0 0 10px 10px;
+        }
+        .feature {
+            background: white;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 8px;
+            border-left: 4px solid #22c55e;
+        }
+        .cta-button {
+            display: inline-block;
+            background: #22c55e;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            color: #6b7280;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎉 Bienvenue chez nous !</h1>
+        <p style="font-size: 18px;">Votre compte est maintenant activé</p>
+    </div>
+    
+    <div class="content">
+        <h2>Bonjour {{ user.first_name }},</h2>
+        
+        <p>Félicitations ! Votre compte <strong>Mon Marché À Domicile</strong> est maintenant actif.</p>
+        
+        <p>Vous pouvez dès maintenant profiter de nos services :</p>
+        
+        <div class="feature">
+            <strong>🛒 Commander en ligne</strong>
+            <p>Des produits frais livrés directement chez vous</p>
+        </div>
+        
+        <div class="feature">
+            <strong>🚚 Livraison rapide</strong>
+            <p>Commandez aujourd'hui, recevez demain</p>
+        </div>
+        
+        <div class="feature">
+            <strong>💰 Promotions exclusives</strong>
+            <p>Profitez d'offres spéciales réservées aux membres</p>
+        </div>
+        
+        <div class="feature">
+            <strong>⭐ Points de fidélité</strong>
+            <p>Gagnez des points à chaque commande</p>
+        </div>
+        
+        <div style="text-align: center;">
+            <a href="#" class="cta-button">Commencer mes achats</a>
+        </div>
+        
+        <p>Si vous avez des questions, n'hésitez pas à nous contacter.</p>
+        
+        <p>Bons achats !<br>
+        <strong>L'équipe Mon Marché À Domicile</strong></p>
+    </div>
+    
+    <div class="footer">
+        <p>📧 {{ user.email }} | 📱 Support : +225 01 23 45 67 89</p>
+        <p>© 2026 Mon Marché À Domicile - Tous droits réservés</p>
+    </div>
+</body>
+</html>
