@@ -24,15 +24,8 @@ def user_avatar_upload_path(instance, filename):
  
 def document_file_upload_path(instance, filename):
     return f'documents/{instance.type}/{filename}'
- 
-def generate_matricule():
-    """Génère un matricule unique pour les étudiants : ETU-ANNÉE-XXXXX"""
-    year = timezone.now().year
-    return f"ETU{year}{random.randint(10000, 99999)}"
 
 
-
- 
 # =============================================================================
 # 👤  MANAGER UTILISATEUR PERSONNALISÉ
 # =============================================================================
@@ -70,7 +63,7 @@ class User(AbstractUser, SafeDeleteModel):
  
     - ADMINISTRATEUR  → connexion email + mot de passe + Google Authenticator (TOTP)
     - BIBLIOTHECAIRE  → connexion email + mot de passe + Google Authenticator (TOTP)
-    - ETUDIANT        → connexion matricule + mot de passe + OTP email (optionnel)
+    - ETUDIANT        → connexion matricule + mot de passe + Google Authenticator (TOTP)
  
     Tous les comptes supportent le 2FA (TOTP via Google Authenticator).
     """
@@ -87,11 +80,7 @@ class User(AbstractUser, SafeDeleteModel):
     # ── Identifiants ──────────────────────────────────────────────────────────
     id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email      = models.EmailField(unique=True, verbose_name="Adresse email")
-    matricule  = models.CharField(
-        max_length=20, unique=True, null=True, blank=True,
-        verbose_name="Matricule étudiant",
-        help_text="Généré automatiquement pour les étudiants."
-    )
+  
     phone      = models.CharField(max_length=17, unique=True, verbose_name="Téléphone")
     user_type  = models.CharField(
         max_length=20,
@@ -117,7 +106,7 @@ class User(AbstractUser, SafeDeleteModel):
     is_2fa_enabled   = models.BooleanField(
         default=False,
         verbose_name="2FA activé",
-        help_text="Obligatoire pour Admin et Bibliothécaire."
+        help_text="Obligatoire pour tous les types de comptes."
     )
     totp_verified_at = models.DateTimeField(
         null=True, blank=True,
@@ -148,9 +137,6 @@ class User(AbstractUser, SafeDeleteModel):
  
     # ── Sauvegarde ────────────────────────────────────────────────────────────
     def save(self, *args, **kwargs):
-        # Matricule auto pour les étudiants
-        if self.user_type == self.UserType.ETUDIANT and not self.matricule:
-            self.matricule = generate_matricule()
         # Admin & Bibliothécaire doivent avoir is_staff=True
         if self.user_type in (self.UserType.ADMINISTRATEUR, self.UserType.BIBLIOTHECAIRE):
             self.is_staff = True
@@ -171,8 +157,9 @@ class User(AbstractUser, SafeDeleteModel):
  
     @property
     def requires_2fa(self):
-        """Admin et Bibliothécaire doivent obligatoirement utiliser le 2FA."""
+        """Tous les comptes doivent obligatoirement utiliser le 2FA."""
         return self.user_type in (
+            self.UserType.ETUDIANT,
             self.UserType.ADMINISTRATEUR,
             self.UserType.BIBLIOTHECAIRE
         )

@@ -100,11 +100,10 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
 
     # ── Affichage liste ───────────────────────────────────────────────────────
     list_display = (
-        'email', 'full_name', 'user_type_badge', 'matricule',
-        'phone', 'statut_2fa', 'is_active_badge', 'created_at'
+        'email', 'full_name', 'user_type_badge','phone', 'statut_2fa', 'is_active_badge', 'created_at'
     )
     list_filter  = ('user_type', 'is_active', 'is_2fa_enabled', 'created_at')
-    search_fields = ('email', 'first_name', 'last_name', 'matricule', 'phone')
+    search_fields = ('email', 'first_name', 'last_name', 'phone')
     ordering     = ('-created_at',)
     date_hierarchy = 'created_at'
     list_per_page  = 25
@@ -115,7 +114,7 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
     # ── Formulaire détail ─────────────────────────────────────────────────────
     fieldsets = (
         (_("🔑 Identifiants"), {
-            'fields': ('email', 'password', 'matricule', 'phone')
+            'fields': ('email', 'password', 'phone')
         }),
         (_("👤 Informations personnelles"), {
             'fields': ('first_name', 'last_name', 'date_of_birth', 'avatar')
@@ -149,7 +148,7 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
         }),
     )
 
-    readonly_fields = ('matricule', 'created_at', 'updated_at', 'totp_verified_at', 'last_login')
+    readonly_fields = ( 'created_at', 'updated_at', 'totp_verified_at', 'last_login')
 
     # ── Colonnes personnalisées ───────────────────────────────────────────────
 
@@ -216,7 +215,7 @@ class EtudiantAdmin(ExportCsvMixin, admin.ModelAdmin):
 
     list_display  = ('user_email', 'user_nom', 'matricule', 'filiere', 'niveau', 'specialite', 'annee_inscription')
     list_filter   = ('filiere', 'niveau', 'specialite', 'annee_inscription')
-    search_fields = ('user__email', 'user__first_name', 'user__last_name', 'user__matricule', 'specialite__name')
+    search_fields = ('user__email', 'user__first_name', 'user__last_name', 'matricule', 'specialite__name')
     autocomplete_fields = ('user', 'filiere', 'niveau', 'specialite')
     list_select_related = ('user', 'filiere', 'niveau', 'specialite')
     ordering      = ('user__last_name',)
@@ -232,7 +231,7 @@ class EtudiantAdmin(ExportCsvMixin, admin.ModelAdmin):
 
     @admin.display(description="Matricule")
     def matricule(self, obj):
-        return obj.user.matricule or "—"
+        return obj.matricule or "—"
 
 
 # =============================================================================
@@ -647,7 +646,7 @@ class FavoriAdmin(admin.ModelAdmin):
         'etudiant__user__email',
         'etudiant__user__first_name',
         'etudiant__user__last_name',
-        'etudiant__user__matricule',
+        'etudiant__matricule',
         'document__title',
         'document__ue__code',
     )
@@ -675,7 +674,7 @@ class FavoriAdmin(admin.ModelAdmin):
     def etudiant_matricule(self, obj):
         return format_html(
             '<code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;">{}</code>',
-            obj.etudiant.user.matricule or '—'
+            obj.etudiant.matricule or '—'
         )
 
     @admin.display(description="Document", ordering='document__title')
@@ -729,7 +728,7 @@ class FavoriAdmin(admin.ModelAdmin):
         ):
             writer.writerow([
                 fav.etudiant.user.get_full_name(),
-                fav.etudiant.user.matricule or '',
+                fav.etudiant.matricule or '',
                 fav.etudiant.user.email,
                 str(fav.etudiant.filiere or ''),
                 str(fav.etudiant.niveau or ''),
@@ -758,7 +757,7 @@ class FavoriAdmin(admin.ModelAdmin):
             .values(
                 'etudiant__user__first_name',
                 'etudiant__user__last_name',
-                'etudiant__user__matricule',
+                'etudiant__matricule',
             )
             .annotate(nb=Count('id'))
             .order_by('-nb')[:3]

@@ -5,6 +5,7 @@
 =============================================================================
 """
 
+import random
 import uuid
 from datetime import timedelta
 
@@ -14,6 +15,10 @@ from django.utils import timezone
 from safedelete.models import SafeDeleteModel, SOFT_DELETE_CASCADE
 
 
+def generate_matricule():
+    """Génère un matricule unique pour les étudiants : ETU-ANNÉE-XXXXX"""
+    year = timezone.now().year
+    return f"ETU{year}{random.randint(10000, 99999)}"
 
 
 # =============================================================================
@@ -45,6 +50,12 @@ class Etudiant(SafeDeleteModel):
         related_name='profil_etudiant',
         limit_choices_to={'user_type': 'ETUDIANT'},
         verbose_name="Compte utilisateur"
+    )
+
+    matricule  = models.CharField(
+        max_length=20, unique=True, null=True, blank=True,
+        verbose_name="Matricule étudiant",
+        help_text="Généré automatiquement pour les étudiants."
     )
 
     # ── Scolarité ─────────────────────────────────────────────────────────────
@@ -148,7 +159,15 @@ class Etudiant(SafeDeleteModel):
                 self.compte_active_le
                 + timedelta(days=self.DUREE_VALIDITE_JOURS)
             )
+
+        if not self.matricule:
+            self.matricule = self._generate_unique_matricule()
+
         super().save(*args, **kwargs)
+
+  
+ 
+    
 
     # =========================================================================
     # 📊  PROPRIÉTÉS — jours restants / statut
@@ -261,6 +280,13 @@ class Etudiant(SafeDeleteModel):
             self.desactiver_compte()
             return True
         return False
+
+    @classmethod
+    def _generate_unique_matricule(cls):
+        while True:
+            matricule = generate_matricule()
+            if not cls.objects.filter(matricule=matricule).exists():
+                return matricule
 
 
 # =============================================================================

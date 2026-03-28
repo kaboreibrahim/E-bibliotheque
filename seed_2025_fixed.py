@@ -676,7 +676,7 @@ def seed_consultations_favoris():
     from apps.documents.models import Document
     from apps.consultations.models import Consultation
     from apps.documents.models import Favori
-    from logs.models import HistoriqueActionService
+    from apps.history.models import HistoriqueActionService
 
     print("\n👁️  Création des consultations, favoris & logs 2025...")
 
@@ -848,7 +848,7 @@ def _seed_historique_actions(admin_user, biblio):
     """Insère des logs réalistes dans MongoDB."""
     from apps.users.models import User
     from apps.documents.models import Document
-    from logs.models import HistoriqueActionService as HAS
+    from apps.history.models import HistoriqueActionService as HAS
 
     print("\n📋 Insertion logs MongoDB (HistoriqueAction)...")
 

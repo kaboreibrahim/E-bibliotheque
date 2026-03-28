@@ -61,8 +61,11 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
+    'django_otp',
+    'django_otp.plugins.otp_totp',
     'django_filters',
     'drf_yasg',
+    'drf_spectacular',
     'safedelete',
 
     #Local apps
@@ -75,6 +78,7 @@ INSTALLED_APPS = [
     'apps.consultations',
     'apps.history',
     'apps.specialites',
+    
 ]
 
 MIDDLEWARE = [
@@ -130,6 +134,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
@@ -143,6 +148,13 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ),
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'E-BIBLIO API',
+    'DESCRIPTION': 'Documentation API de l application E-BIBLIO',
+    'VERSION': 'v1',
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 
