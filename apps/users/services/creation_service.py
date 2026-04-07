@@ -8,6 +8,7 @@
 import logging
 from dataclasses import dataclass, field
 
+from apps.specialites.rules import niveau_accepte_specialite, niveau_est_tronc_commun
 from apps.users.models.user_models import User
 from apps.users.repositories.user_repository import UserRepository
 from apps.users.repositories.etudiant_repository import (
@@ -61,7 +62,7 @@ class EtudiantCreationService:
         Paramètres (issus du serializer validé) :
           first_name, last_name, email, phone, date_of_birth
           password
-          filiere_id, niveau_id, specialite_id (optionnel pour L1-L3)
+          filiere_id, niveau_id, specialite_id (obligatoire pour tous les niveaux)
           annee_inscription (optionnel)
           activer_immediatement (bool)
         """
@@ -126,18 +127,16 @@ class EtudiantCreationService:
 
         # ── Règle métier : spécialité ↔ niveau ───────────────────────────────
         if niveau:
-            niveaux_tronc = ('L1', 'L2', 'L3')
-            niveaux_specialite = ('M1', 'M2', 'DOCTORAT')
 
-            if niveau.name in niveaux_tronc and specialite:
+            if niveau_est_tronc_commun(niveau.name) and specialite:
                 return ServiceResult(
                     success=False,
-                    message=f"Les étudiants en {niveau.name} (tronc commun) ne doivent pas avoir de spécialité.",
+                    message=f"Les étudiants en {niveau.name} ne doivent pas avoir de spécialité.",
                     errors={'specialite_id': ['Spécialité non autorisée pour ce niveau.']},
                     http_status=400
                 )
 
-            if niveau.name in niveaux_specialite and not specialite:
+            if niveau_accepte_specialite(niveau.name) and not specialite:
                 return ServiceResult(
                     success=False,
                     message=f"Une spécialité est obligatoire pour le niveau {niveau.name}.",
@@ -145,7 +144,7 @@ class EtudiantCreationService:
                     http_status=400
                 )
 
-            if specialite and niveau.name in niveaux_specialite:
+            if specialite and niveau_accepte_specialite(niveau.name):
                 if str(specialite.niveau_id) != str(niveau.pk):
                     return ServiceResult(
                         success=False,

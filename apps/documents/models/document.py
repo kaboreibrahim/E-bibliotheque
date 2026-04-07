@@ -47,5 +47,9 @@ class Document(DocumentUE, SafeDeleteModel):
         verbose_name_plural = "Documents"
         ordering = ["-created_at"]
 
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"[{self.type}] {self.title}"

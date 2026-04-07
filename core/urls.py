@@ -10,6 +10,13 @@ urlpatterns = [
 
 
     path('api/schema/', SpectacularAPIView.as_view(),                        name='schema'),
+    path('api/filieres/', include('apps.filiere.urls')),
+    path('api/niveaux/', include('apps.niveau.urls')),
+    path('api/ues/', include('apps.ue.urls')),
+    path('api/specialites/', include('apps.specialites.urls')),
+    path('api/favoris/', include('apps.favoris.urls')),
+    path('api/documents/', include('apps.documents.urls')),
+    path('api/consultations/', include('apps.consultations.urls')),
     path('api/docs/',   SpectacularSwaggerView.as_view(url_name='schema'),   name='swagger-ui'),
     path('api/redoc/',  SpectacularRedocView.as_view(url_name='schema'),     name='redoc'),
     path('api/auth/',   include('apps.users.urls')),

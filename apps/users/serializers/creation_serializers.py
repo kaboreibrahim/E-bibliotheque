@@ -9,6 +9,10 @@ import re
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from apps.specialites.rules import (
+    LIBELLE_NIVEAUX_AVEC_SPECIALITE,
+)
+
 
 # =============================================================================
 # 🎓  CRÉATION ÉTUDIANT (par Bibliothécaire ou Admin)
@@ -20,7 +24,7 @@ class EtudiantCreateSerializer(serializers.Serializer):
 
     Le bibliothécaire ou l'admin renseigne :
       - Les informations personnelles (nom, email, téléphone)
-      - La scolarité (filière, niveau, spécialité si M1/M2/DOCTORAT)
+      - La scolarité (filière, niveau, spécialité si le niveau l'exige)
       - Un mot de passe temporaire (l'étudiant devra le changer)
 
     Le matricule est généré automatiquement.
@@ -71,8 +75,7 @@ class EtudiantCreateSerializer(serializers.Serializer):
         allow_null=True,
         help_text=(
             "UUID de la filière. "
-            "Pour L1/L2/L3 (tronc commun) → filière 'Droit Général'. "
-            "Pour M1/M2 → filière de la spécialité."
+            f"Pour {LIBELLE_NIVEAUX_AVEC_SPECIALITE} → filière liée à la spécialité."
         )
     )
     niveau_id = serializers.UUIDField(
@@ -83,8 +86,7 @@ class EtudiantCreateSerializer(serializers.Serializer):
         allow_null=True,
         help_text=(
             "UUID de la spécialité. "
-            "OBLIGATOIRE pour M1, M2 et DOCTORAT. "
-            "LAISSER VIDE pour L1, L2 et L3 (tronc commun)."
+            f"OBLIGATOIRE pour {LIBELLE_NIVEAUX_AVEC_SPECIALITE}."
         )
     )
     annee_inscription = serializers.IntegerField(
@@ -147,7 +149,7 @@ class EtudiantUpdateSerializer(serializers.Serializer):
     niveau_id     = serializers.UUIDField(required=False,
                         help_text="Nouveau niveau (passage en année supérieure).")
     specialite_id = serializers.UUIDField(required=False, allow_null=True,
-                        help_text="Nouvelle spécialité (obligatoire pour M1/M2/DOC).")
+                        help_text=f"Nouvelle spécialité (obligatoire pour {LIBELLE_NIVEAUX_AVEC_SPECIALITE}).")
 
     def validate_phone(self, value):
         phone = re.sub(r'\s+', '', value)

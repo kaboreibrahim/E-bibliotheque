@@ -123,9 +123,7 @@ class EtudiantCreateView(APIView):
 
 | Niveau | Spécialité requise ? |
 |--------|----------------------|
-| L1, L2, L3 | ❌ Non — tronc commun, laisser vide |
-| M1, M2 | ✅ Oui — obligatoire |
-| DOCTORAT | ✅ Oui — obligatoire |
+| L1, L2, L3, M1, M2, DOCTORAT | ✅ Oui — obligatoire |
 
 ---
 
@@ -175,22 +173,41 @@ class EtudiantCreateView(APIView):
             403: OpenApiResponse(description="Permission insuffisante"),
         },
         examples=[
-            # ── L1 tronc commun ───────────────────────────────────────────────
+            # ── L3 spécialité ─────────────────────────────────────────────────
             OpenApiExample(
-                'Créer un étudiant L1 (tronc commun)',
-                description="Pas de spécialité pour le tronc commun L1/L2/L3.",
+                'Créer un étudiant L3 (avec spécialité)',
+                description="Spécialité obligatoire pour L3 aussi.",
+                request_only=True,
+                value={
+                    "first_name":           "Aminata",
+                    "last_name":            "AMANI",
+                    "email":                "etu.amani.l3@etud-ci.edu",
+                    "phone":                "+2250702001001",
+                    "date_of_birth":        "2004-06-15",
+                    "password":             "Etudiant@2025!",
+                    "confirm_password":     "Etudiant@2025!",
+                    "niveau_id":            "uuid-du-niveau-L3",
+                    "filiere_id":           "uuid-filiere-droit-des-affaires",
+                    "specialite_id":        "uuid-specialite-droit-des-affaires-l3",
+                    "annee_inscription":    2025,
+                    "activer_immediatement": False
+                }
+            ),
+            OpenApiExample(
+                'Créer un étudiant L1 (avec spécialité)',
+                description="Spécialité obligatoire pour L1, L2, L3, M1, M2 et DOCTORAT.",
                 request_only=True,
                 value={
                     "first_name":           "Aminata",
                     "last_name":            "AMANI",
                     "email":                "etu.amani.l1@etud-ci.edu",
-                    "phone":                "+2250702001001",
+                    "phone":                "+2250702001002",
                     "date_of_birth":        "2004-06-15",
                     "password":             "Etudiant@2025!",
                     "confirm_password":     "Etudiant@2025!",
                     "niveau_id":            "uuid-du-niveau-L1",
-                    "filiere_id":           "uuid-filiere-droit-general",
-                    "specialite_id":        None,
+                    "filiere_id":           "uuid-filiere-droit-des-affaires",
+                    "specialite_id":        "uuid-specialite-droit-des-affaires-l1",
                     "annee_inscription":    2025,
                     "activer_immediatement": False
                 }
@@ -198,7 +215,7 @@ class EtudiantCreateView(APIView):
             # ── M2 spécialité ─────────────────────────────────────────────────
             OpenApiExample(
                 'Créer un étudiant M2 (avec spécialité)',
-                description="Spécialité obligatoire pour M1/M2/DOCTORAT.",
+                description="Spécialité obligatoire pour L1/L2/L3/M1/M2/DOCTORAT.",
                 request_only=True,
                 value={
                     "first_name":           "Inès",

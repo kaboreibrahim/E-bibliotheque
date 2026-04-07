@@ -7,17 +7,9 @@
     <label class="historique-label" for="filtre-action">Action</label>
     <select id="filtre-action" class="historique-input">
       <option value="">Toutes les actions</option>
-      <option value="CONNEXION">Connexion</option>
-      <option value="DECONNEXION">Deconnexion</option>
-      <option value="CONNEXION_ECHEC">Connexion echouee</option>
-      <option value="OTP_ECHEC">OTP echoue</option>
-      <option value="TOTP_ACTIVE">TOTP active</option>
-      <option value="DOCUMENT_AJOUT">Document ajoute</option>
-      <option value="DOCUMENT_MODIFICATION">Document modifie</option>
-      <option value="DOCUMENT_SUPPRESSION">Document supprime</option>
-      <option value="UTILISATEUR_CREATION">Utilisateur cree</option>
-      <option value="UTILISATEUR_MODIF">Utilisateur modifie</option>
-      <option value="UTILISATEUR_DESACTIVE">Utilisateur desactive</option>
+      {% for action_value, action_label in action_choices %}
+      <option value="{{ action_value }}">{{ action_label }}</option>
+      {% endfor %}
     </select>
 
     <label class="historique-label" for="filtre-statut">Statut</label>
@@ -34,7 +26,7 @@
 
   <section class="historique-panel" id="stats-box">
     <h3>Stats 30 derniers jours</h3>
-    <p class="historique-muted">Cliquez sur "Charger les logs" pour afficher les statistiques.</p>
+    <p class="historique-muted">Chargement des statistiques...</p>
   </section>
 </div>
 
@@ -54,7 +46,7 @@
     <tbody id="logs-body">
       <tr>
         <td colspan="7" class="historique-empty">
-          Utilisez les filtres ci-dessus pour charger les logs.
+          Chargement des logs...
         </td>
       </tr>
     </tbody>
@@ -63,18 +55,26 @@
 
 <script>
 const BADGE_COLORS = {
-  CONNEXION:             { bg: "#28a745", label: "Connexion" },
-  DECONNEXION:           { bg: "#6c757d", label: "Deconnexion" },
-  CONNEXION_ECHEC:       { bg: "#dc3545", label: "Connexion echouee" },
-  OTP_ECHEC:             { bg: "#dc3545", label: "OTP echoue" },
-  TOTP_ACTIVE:           { bg: "#007bff", label: "TOTP active" },
-  TOTP_ECHEC:            { bg: "#dc3545", label: "TOTP echoue" },
-  DOCUMENT_AJOUT:        { bg: "#17a2b8", label: "Doc ajoute" },
-  DOCUMENT_MODIFICATION: { bg: "#fd7e14", label: "Doc modifie" },
-  DOCUMENT_SUPPRESSION:  { bg: "#dc3545", label: "Doc supprime" },
-  UTILISATEUR_CREATION:  { bg: "#6f42c1", label: "User cree" },
-  UTILISATEUR_MODIF:     { bg: "#fd7e14", label: "User modifie" },
-  UTILISATEUR_DESACTIVE: { bg: "#dc3545", label: "User desactive" }
+  CONNEXION_ETAPE_1:      { bg: "#17a2b8", label: "Connexion etape 1" },
+  CONNEXION:              { bg: "#28a745", label: "Connexion" },
+  DECONNEXION:            { bg: "#6c757d", label: "Deconnexion" },
+  CONNEXION_ECHEC:        { bg: "#dc3545", label: "Connexion echouee" },
+  OTP_ENVOI:              { bg: "#007bff", label: "OTP envoye" },
+  OTP_ECHEC:              { bg: "#dc3545", label: "OTP echoue" },
+  TOTP_ACTIVE:            { bg: "#007bff", label: "TOTP valide" },
+  TOTP_ECHEC:             { bg: "#dc3545", label: "TOTP echoue" },
+  DOCUMENT_AJOUT:         { bg: "#17a2b8", label: "Document ajoute" },
+  DOCUMENT_MODIFICATION:  { bg: "#fd7e14", label: "Document modifie" },
+  DOCUMENT_SUPPRESSION:   { bg: "#dc3545", label: "Document supprime" },
+  UTILISATEUR_CREATION:   { bg: "#6f42c1", label: "Utilisateur cree" },
+  UTILISATEUR_MODIF:      { bg: "#fd7e14", label: "Utilisateur modifie" },
+  UTILISATEUR_DESACTIVE:  { bg: "#dc3545", label: "Utilisateur desactive" },
+  UTILISATEUR_SUPPRIME:   { bg: "#5a1e1e", label: "Utilisateur supprime" },
+  FAVORI_AJOUT:           { bg: "#e83e8c", label: "Favori ajoute" },
+  FAVORI_SUPPRESSION:     { bg: "#a61e4d", label: "Favori supprime" },
+  CONSULTATION_VUE:       { bg: "#20c997", label: "Consultation document" },
+  CONSULTATION_RECHERCHE: { bg: "#6610f2", label: "Recherche effectuee" },
+  CONSULTATION_TERMINEE:  { bg: "#0d6efd", label: "Consultation terminee" }
 };
 
 function escapeHtml(value) {
@@ -109,7 +109,6 @@ async function chargerLogs() {
     const res = await fetch(url);
     const data = await res.json();
     afficherLogs(data.results || []);
-    chargerStats();
   } catch (error) {
     tbody.innerHTML = `
       <tr>
@@ -131,12 +130,15 @@ function afficherLogs(logs) {
   }
 
   tbody.innerHTML = logs.map((log, index) => {
-    const badge = BADGE_COLORS[log.action] || { bg: "#6c757d", label: log.action || "Inconnue" };
+    const badge = BADGE_COLORS[log.action] || {
+      bg: "#6c757d",
+      label: log.action_label || log.action || "Inconnue",
+    };
     const statut = log.statut === "succes"
       ? '<span class="historique-ok">Succes</span>'
       : '<span class="historique-ko">Echec</span>';
     const details = log.details && Object.keys(log.details).length
-      ? `<code>${escapeHtml(JSON.stringify(log.details).slice(0, 120))}</code>`
+      ? `<code>${escapeHtml(JSON.stringify(log.details).slice(0, 140))}</code>`
       : "-";
     const rowClass = index % 2 === 0 ? "" : "historique-row-alt";
     const createdAt = log.created_at
@@ -164,7 +166,7 @@ async function chargerStats() {
     const box = document.getElementById("stats-box");
     const rows = (data.stats || []).map((item) => `
       <tr>
-        <td>${escapeHtml(BADGE_COLORS[item.action]?.label || item.action)}</td>
+        <td>${escapeHtml(item.action_label || BADGE_COLORS[item.action]?.label || item.action)}</td>
         <td class="historique-stat-total">${escapeHtml(item.total)}</td>
         <td class="historique-stat-fail">${item.echecs ? escapeHtml(item.echecs) : "-"}</td>
       </tr>
@@ -184,8 +186,15 @@ async function chargerStats() {
       </table>
     `;
   } catch (error) {
-    console.warn("Stats MongoDB indisponibles", error);
+    const box = document.getElementById("stats-box");
+    box.innerHTML = '<p class="historique-error">Impossible de charger les statistiques.</p>';
+    console.warn("Stats indisponibles", error);
   }
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  chargerLogs();
+  chargerStats();
+});
 </script>
 {% endblock %}

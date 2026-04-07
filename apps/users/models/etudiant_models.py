@@ -14,6 +14,12 @@ from django.db import models
 from django.utils import timezone
 from safedelete.models import SafeDeleteModel, SOFT_DELETE_CASCADE
 
+from apps.specialites.rules import (
+    LIBELLE_NIVEAUX_AVEC_SPECIALITE,
+    niveau_accepte_specialite,
+    niveau_est_tronc_commun,
+)
+
 
 def generate_matricule():
     """Génère un matricule unique pour les étudiants : ETU-ANNÉE-XXXXX"""
@@ -79,7 +85,9 @@ class Etudiant(SafeDeleteModel):
         null=True, blank=True,
         related_name='etudiants',
         verbose_name="Specialite",
-        help_text="Renseigner pour M1, M2 et DOCTORAT. Laisser vide pour L1, L2 et L3."
+        help_text=(
+            f"Renseigner pour {LIBELLE_NIVEAUX_AVEC_SPECIALITE}."
+        )
     )
     annee_inscription = models.PositiveIntegerField(
         default=timezone.now().year,
@@ -138,14 +146,19 @@ class Etudiant(SafeDeleteModel):
     def clean(self):
         super().clean()
 
+        if self.niveau and niveau_accepte_specialite(self.niveau.name) and not self.specialite:
+            raise ValidationError({
+                'specialite': "Une specialite est requise pour ce niveau."
+            })
+
+        if self.specialite and self.niveau and niveau_est_tronc_commun(self.niveau.name):
+            raise ValidationError({
+                'specialite': "Ce niveau ne doit pas avoir de specialite."
+            })
+
         if self.specialite and self.niveau and self.specialite.niveau_id != self.niveau_id:
             raise ValidationError({
                 'specialite': "La specialite doit appartenir au meme niveau que l'etudiant."
-            })
-
-        if self.specialite and self.niveau and self.niveau.name in {'L1', 'L2', 'L3'}:
-            raise ValidationError({
-                'specialite': "Le tronc commun (L1, L2, L3) ne doit pas avoir de specialite."
             })
 
     def save(self, *args, **kwargs):

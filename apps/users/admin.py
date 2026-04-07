@@ -428,20 +428,20 @@ class ECUEAdmin(admin.ModelAdmin):
 class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
 
     list_display   = (
-        'title', 'type_badge', 'filiere', 'niveau', 'specialite', 'ue',
+        'title', 'type_badge', 'annee_academique_display', 'filiere', 'niveau', 'specialite', 'ue',
         'auteur_ou_encadreur', 'ajoute_par', 'nb_consultations', 'nb_favoris', 'created_at'
     )
-    list_filter    = ('type', 'filiere', 'niveau', 'specialite', 'ue', 'created_at')
+    list_filter    = ('type', 'annee_academique_debut', 'filiere', 'niveau', 'specialite', 'ue', 'created_at')
     search_fields  = ('title', 'auteur', 'encadreur', 'description', 'specialite__name', 'ue__code', 'ue__name')
     autocomplete_fields = ('filiere', 'niveau', 'specialite', 'ue', 'ajoute_par')
     list_select_related = ('filiere', 'niveau', 'specialite', 'ue', 'ajoute_par')
     date_hierarchy = 'created_at'
-    ordering       = ('-created_at',)
+    ordering       = ('-annee_academique_debut', '-created_at')
     list_per_page  = 20
 
     fieldsets = (
         (_("📋 Informations générales"), {
-            'fields': ('title', 'type', 'description', 'file_path')
+            'fields': ('title', 'type', 'annee_academique_debut', 'description', 'file_path')
         }),
         (_("🏫 Classification"), {
             'fields': ('filiere', 'niveau', 'specialite', 'ue')
@@ -492,6 +492,10 @@ class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
             'border-radius:10px;font-size:11px;">{}</span>',
             color, obj.get_type_display()
         )
+
+    @admin.display(description="Annee academique", ordering='annee_academique_debut')
+    def annee_academique_display(self, obj):
+        return obj.annee_academique or "—"
 
     @admin.display(description="Auteur / Sujet")
     def auteur_ou_encadreur(self, obj):
@@ -877,7 +881,6 @@ class HistoriqueActionProxy(Favori):
         app_label    = 'documents'
 
 
-admin.site.register(HistoriqueActionProxy, HistoriqueActionAdmin)
 
 
 # =============================================================================

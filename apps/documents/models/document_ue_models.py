@@ -1,9 +1,15 @@
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.documents.models.document_type_models import TypeDocument
 from apps.filiere.models import Filiere
 from apps.niveau.models import Niveau
+from apps.specialites.rules import (
+    LIBELLE_NIVEAUX_AVEC_SPECIALITE,
+    niveau_accepte_specialite,
+    niveau_est_tronc_commun,
+)
 from apps.ue.models import ECUE
 
 class DocumentUE(models.Model):
@@ -38,9 +44,7 @@ class DocumentUE(models.Model):
         related_name='documents',
         verbose_name="Spécialité",
         help_text=(
-            "Spécialité M1/M2/DOCTORAT du document. "
-            "NULL pour les documents du tronc commun (L1/L2/L3) — "
-            "dans ce cas le niveau est déduit via l'UE."
+            f"Spécialité {LIBELLE_NIVEAUX_AVEC_SPECIALITE} du document."
         )
     )
     ue = models.ForeignKey(
@@ -50,6 +54,17 @@ class DocumentUE(models.Model):
         blank=True,
         related_name="documents",
         verbose_name="ECUE concernee",
+    )
+    annee_academique_debut = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        validators=[MinValueValidator(1900), MaxValueValidator(9998)],
+        verbose_name="Annee academique (debut)",
+        help_text=(
+            "Saisir l'annee de debut. Ex: 2024 pour 2024-2025. "
+            "Les archives anciennes comme 1960-1961 sont aussi supportees."
+        ),
     )
 
     auteur = models.CharField(
@@ -68,14 +83,28 @@ class DocumentUE(models.Model):
     class Meta:
         abstract = True
 
+    @property
+    def annee_academique(self):
+        if self.annee_academique_debut is None:
+            return None
+        return f"{self.annee_academique_debut}-{self.annee_academique_debut + 1}"
+
     def clean(self):
         super().clean()
 
+        if self._state.adding and self.annee_academique_debut is None:
+            raise ValidationError(
+                {"annee_academique_debut": "L'annee academique est obligatoire lors de l'ajout d'un document."}
+            )
+
+        if self.niveau and niveau_accepte_specialite(self.niveau.name) and not self.specialite:
+            raise ValidationError({"specialite": "Une specialite est requise pour ce niveau."})
+
+        if self.specialite and self.niveau and niveau_est_tronc_commun(self.niveau.name):
+            raise ValidationError({"specialite": "Ce niveau ne doit pas avoir de specialite."})
+
         if self.specialite and self.niveau and self.specialite.niveau_id != self.niveau_id:
             raise ValidationError({"specialite": "La specialite doit appartenir au meme niveau que le document."})
-
-        if self.specialite and self.niveau and self.niveau.name in {'L1', 'L2', 'L3'}:
-            raise ValidationError({"specialite": "Le tronc commun (L1, L2, L3) ne doit pas avoir de specialite."})
 
         doc_type = getattr(self, "type", None)
         if doc_type in {TypeDocument.MEMOIRE, TypeDocument.THESE} and not self.auteur:

@@ -1,769 +1,113 @@
 """
-=============================================================================
- BIBLIOTHÈQUE UNIVERSITAIRE — fixtures/seed_2025.py
- Données de test 2025 — Licence (tronc commun) + Masters spécialisés + Doctorat
- 
- Commande : python manage.py shell < fixtures/seed_2025.py
-            ou appeler seed_all() depuis le shell Django
-=============================================================================
+Seed 2025 pour E-BIBLIO, aligne sur les modeles Django reels.
+
+Execution :
+    python seed_2025.py
+
+Ou depuis un shell Django deja initialise :
+    import seed_2025
+    seed_2025.seed_all()
 """
 
+from __future__ import annotations
+
+import os
 import unicodedata
-import uuid
-from datetime import timedelta, datetime
-from django.utils import timezone
+from datetime import datetime, timedelta
+from decimal import Decimal
+
+import django
 from django.contrib.auth.hashers import make_password
+from django.db import transaction
+from django.utils import timezone
 
-NIVEAUX_TRONC_COMMUN = {'L1', 'L2', 'L3'}
+
+SEED_YEAR = 2025
+NIVEAUX_TRONC_COMMUN = {"L1", "L2", "L3"}
 SPECIALITE_DOCTORAT_NAME = "Doctorat en droit"
-SPECIALITE_DROITS_HUMAINS_NAME = "Droits de l'Homme, Etat de Droit et Bonne Gouvernance"
+
+ADMIN_PASSWORD = "Admin@2025!"
+BIBLIO_PASSWORD = "Biblio@2025!"
+ETUDIANT_PASSWORD = "Etudiant@2025!"
 
 
-def _ensure_specialite(niveau, filiere=None, name=None):
-    from apps.specialites.models import Specialite
-
-    if not niveau:
-        return None
-
-    if niveau.name in NIVEAUX_TRONC_COMMUN:
-        return None
-
-    specialite_name = name
-    if not specialite_name and niveau.name == 'DOCTORAT':
-        specialite_name = SPECIALITE_DOCTORAT_NAME
-    if not specialite_name:
-        target_filiere = filiere or getattr(niveau, 'filiere', None)
-        specialite_name = getattr(target_filiere, 'name', None)
-    if not specialite_name:
-        return None
-
-    specialite, _ = Specialite.objects.get_or_create(
-        name=specialite_name,
-        niveau=niveau,
-    )
-    return specialite
+def bootstrap_django() -> None:
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
+    django.setup()
 
 
-def _sync_foreign_key(instance, field_name, value):
-    current_value = getattr(instance, field_name)
-    if current_value == value:
-        return False
-
-    instance.__class__.objects.filter(pk=instance.pk).update(
-        **{f'{field_name}_id': value.pk if value else None}
-    )
-    setattr(instance, field_name, value)
-    return True
+def get_all_manager(model):
+    return getattr(model, "all_objects", model.objects)
 
 
-def seed_all():
-    seed_filieres_niveaux()
-    seed_ues_ecues()
-    seed_utilisateurs()
-    seed_documents()
-    seed_consultations_favoris()
-    print("\n✅ SEED 2025 TERMINÉ AVEC SUCCÈS !\n")
+def upsert_instance(model, lookup: dict, values: dict | None = None, validate: bool = True):
+    values = values or {}
+    manager = get_all_manager(model)
+    instance = manager.filter(**lookup).order_by("pk").first()
+    created = instance is None
 
-
-# =============================================================================
-# 🏫  1. FILIÈRES & NIVEAUX
-# =============================================================================
-
-def seed_filieres_niveaux():
-    from apps.filiere.models import Filiere
-    from apps.niveau.models import Niveau
-
-    print("📚 Création filières & niveaux...")
-
-    # ── Filière Tronc Commun (L1/L2/L3) ───────────────────────────────────────
-    filiere_tc, _ = Filiere.objects.get_or_create(
-        name="Droit (Tronc Commun)",
-        defaults={'id': uuid.UUID('aaaaaaaa-0001-0001-0001-000000000001')}
-    )
-
-    # ──── Niveaux Licence (Tronc Commun) ───────────────────────────────────────
-    niveaux_tc = {}
-    for n in ['L1', 'L2', 'L3']:
-        obj, _ = Niveau.objects.get_or_create(
-            filiere=filiere_tc, name=n
-        )
-        niveaux_tc[n] = obj
-
-    # ── Filières Master (Spécialisées) ──────────────────────────────────────────
-    specialites_master = [
-        {"name": "Droit des Contentieux", "id": "aaaaaaaa-0001-0001-0001-000000000002"},
-        {"name": "Droit des Affaires", "id": "aaaaaaaa-0001-0001-0001-000000000003"},
-        {"name": "Droit Public", "id": "aaaaaaaa-0001-0001-0001-000000000004"},
-        {"name": "Droit Privé", "id": "aaaaaaaa-0001-0001-0001-000000000005"},
-    ]
-
-    filieres_master = {}
-    niveaux_master = {}
-    
-    for spec in specialites_master:
-        filiere, _ = Filiere.objects.get_or_create(
-            name=spec["name"],
-            defaults={'id': uuid.UUID(spec["id"])}
-        )
-        filieres_master[spec["name"]] = filiere
-        
-        # Créer M1 et M2 pour chaque spécialité
-        for n in ['M1', 'M2']:
-            niveau_key = f"{spec['name']}_{n}"
-            obj, _ = Niveau.objects.get_or_create(
-                filiere=filiere, name=n
-            )
-            niveaux_master[niveau_key] = obj
-
-    # ── Filière Doctorat ───────────────────────────────────────────────────────
-    filiere_doctorat, _ = Filiere.objects.get_or_create(
-        name="Doctorat",
-        defaults={'id': uuid.UUID('aaaaaaaa-0001-0001-0001-000000000006')}
-    )
-    
-    doctorat, _ = Niveau.objects.get_or_create(
-        filiere=filiere_doctorat, name="DOCTORAT"
-    )
-
-    print(f"   ✔ Filière Tronc Commun : {filiere_tc.name}")
-    print(f"   ✔ Niveaux Licence : {', '.join(niveaux_tc.keys())}")
-    print(f"   ✔ Filières Master : {', '.join(filieres_master.keys())}")
-    print(f"   ✔ Niveaux Master : M1, M2 pour chaque spécialité")
-    print(f"   ✔ Filière Doctorat : {filiere_doctorat.name}")
-    
-    return {
-        'filiere_tc': filiere_tc,
-        'niveaux_tc': niveaux_tc,
-        'filieres_master': filieres_master,
-        'niveaux_master': niveaux_master,
-        'filiere_doctorat': filiere_doctorat,
-        'doctorat': doctorat
-    }
-
-
-# =============================================================================
-# 📖  2. UEs & ECUEs (issues des images)
-# =============================================================================
-
-def seed_ues_ecues():
-    from apps.ue.models import UE, ECUE
-    from apps.filiere.models import Filiere
-    from apps.niveau.models import Niveau
-
-    print("\n📖 Création UEs & ECUEs 2025...")
-
-    # ── Récupérer la structure ─────────────────────────────────────────────────
-    filiere_tc = Filiere.objects.get(name="Droit (Tronc Commun)")
-    filieres_master = {
-        "Droit des Contentieux": Filiere.objects.get(name="Droit des Contentieux"),
-        "Droit des Affaires": Filiere.objects.get(name="Droit des Affaires"),
-        "Droit Public": Filiere.objects.get(name="Droit Public"),
-        "Droit Privé": Filiere.objects.get(name="Droit Privé"),
-    }
-    
-    niveaux_tc = {
-        'L1': Niveau.objects.get(filiere=filiere_tc, name='L1'),
-        'L2': Niveau.objects.get(filiere=filiere_tc, name='L2'),
-        'L3': Niveau.objects.get(filiere=filiere_tc, name='L3'),
-    }
-    
-    niveaux_master = {}
-    for spec_name, filiere in filieres_master.items():
-        niveaux_master[f"{spec_name}_M1"] = Niveau.objects.get(filiere=filiere, name='M1')
-        niveaux_master[f"{spec_name}_M2"] = Niveau.objects.get(filiere=filiere, name='M2')
-
-    # ── UEs Tronc Commun ───────────────────────────────────────────────────────
-    ues_tc = [
-        # L1
-        {'code': 'DGL101', 'name': 'Droit Constitutionnel Général', 'niveaux': [niveaux_tc['L1']]},
-        {'code': 'DGL102', 'name': 'Droit Civil des Personnes', 'niveaux': [niveaux_tc['L1']]},
-        {'code': 'DGL103', 'name': 'Droit Penal Général', 'niveaux': [niveaux_tc['L1'], niveaux_tc['L2']]},
-        {'code': 'DGL104', 'name': 'Introduction au Droit Administratif', 'niveaux': [niveaux_tc['L1']]},
-        # L2
-        {'code': 'DGL105', 'name': 'Histoire du Droit', 'niveaux': [niveaux_tc['L2'], niveaux_tc['L3']]},
-        {'code': 'DGL106', 'name': 'Droit des Obligations', 'niveaux': [niveaux_tc['L2'], niveaux_tc['L3']]},
-        # L3
-        {'code': 'DGL107', 'name': 'Droit Constitutionnel Ivoirien', 'niveaux': [niveaux_tc['L3']]},
-        {'code': 'DGL108', 'name': 'Droit Administratif Général', 'niveaux': [niveaux_tc['L3']]},
-    ]
-
-    # ── UEs Master Droit des Contentieux ───────────────────────────────────────────
-    ues_contentieux = [
-        # M1
-        {'code': 'COC2102', 'name': 'Contentieux constitutionnel', 'niveaux': [niveaux_master["Droit des Contentieux_M1"]]},
-        {'code': 'COA2101', 'name': 'Contentieux administratif', 'niveaux': [niveaux_master["Droit des Contentieux_M1"]]},
-        {'code': 'CCI2103', 'name': 'Contentieux civil', 'niveaux': [niveaux_master["Droit des Contentieux_M1"]]},
-        {'code': 'COF2104', 'name': 'Contentieux fiscal', 'niveaux': [niveaux_master["Droit des Contentieux_M1"]]},
-        {'code': 'CPN2105', 'name': 'Contentieux pénal', 'niveaux': [niveaux_master["Droit des Contentieux_M1"]]},
-        # M2
-        {'code': 'CIP2201', 'name': 'Contentieux international public', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'CIE2202', 'name': 'Contentieux international économique', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'CCM2203', 'name': 'Contentieux commercial', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'VEX2204', 'name': 'Voies d\'exécution et procédure d\'urgence', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'DPR2206', 'name': 'Droit de la preuve', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'CPB2301', 'name': 'Contentieux interne public spécialisé', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'CIS2302', 'name': 'Contentieux international spécialisé', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'DER2303', 'name': 'Droit de l\'arbitrage', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'DIC2304', 'name': 'Contentieux international pénal', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'RAC2305', 'name': 'Rédaction d\'actes', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-        {'code': 'TCC2307', 'name': 'Mémoire', 'niveaux': [niveaux_master["Droit des Contentieux_M2"]]},
-    ]
-
-    # ── UEs Master Droit des Affaires ───────────────────────────────────────────────
-    ues_affaires = [
-        # M1
-        {'code': 'DAC3101', 'name': 'Droit des Sociétés', 'niveaux': [niveaux_master["Droit des Affaires_M1"]]},
-        {'code': 'DAC3102', 'name': 'Droit Commercial Général', 'niveaux': [niveaux_master["Droit des Affaires_M1"]]},
-        {'code': 'DAC3103', 'name': 'Droit Bancaire et Financier', 'niveaux': [niveaux_master["Droit des Affaires_M1"]]},
-        {'code': 'DAC3104', 'name': 'Droit Fiscal des Entreprises', 'niveaux': [niveaux_master["Droit des Affaires_M1"]]},
-        {'code': 'DAC3105', 'name': 'Droit de la Concurrence', 'niveaux': [niveaux_master["Droit des Affaires_M1"]]},
-        # M2
-        {'code': 'DAC3201', 'name': 'Droit International des Affaires', 'niveaux': [niveaux_master["Droit des Affaires_M2"]]},
-        {'code': 'DAC3202', 'name': 'Droit Boursier et Marchés Financiers', 'niveaux': [niveaux_master["Droit des Affaires_M2"]]},
-        {'code': 'DAC3203', 'name': 'Propriété Intellectuelle', 'niveaux': [niveaux_master["Droit des Affaires_M2"]]},
-        {'code': 'DAC3204', 'name': 'Droit des Nouvelles Technologies', 'niveaux': [niveaux_master["Droit des Affaires_M2"]]},
-        {'code': 'TDA3205', 'name': 'Mémoire Droit des Affaires', 'niveaux': [niveaux_master["Droit des Affaires_M2"]]},
-    ]
-
-    # ── UEs Master Droit Public ───────────────────────────────────────────────────
-    ues_public = [
-        # M1
-        {'code': 'DPB4101', 'name': 'Droit Administratif Approfondi', 'niveaux': [niveaux_master["Droit Public_M1"]]},
-        {'code': 'DPB4102', 'name': 'Droit Constitutionnel Comparé', 'niveaux': [niveaux_master["Droit Public_M1"]]},
-        {'code': 'DPB4103', 'name': 'Droit des Libertés Fondamentales', 'niveaux': [niveaux_master["Droit Public_M1"]]},
-        {'code': 'DPB4104', 'name': 'Droit Public Économique', 'niveaux': [niveaux_master["Droit Public_M1"]]},
-        {'code': 'DPB4105', 'name': 'Droit de l\'Urbanisme', 'niveaux': [niveaux_master["Droit Public_M1"]]},
-        # M2
-        {'code': 'DPB4201', 'name': 'Droit International Public', 'niveaux': [niveaux_master["Droit Public_M2"]]},
-        {'code': 'DPB4202', 'name': 'Droit Communautaire', 'niveaux': [niveaux_master["Droit Public_M2"]]},
-        {'code': 'DPB4203', 'name': 'Droit de l\'Environnement', 'niveaux': [niveaux_master["Droit Public_M2"]]},
-        {'code': 'DPB4204', 'name': 'Droit Fiscal Public', 'niveaux': [niveaux_master["Droit Public_M2"]]},
-        {'code': 'TDP4205', 'name': 'Mémoire Droit Public', 'niveaux': [niveaux_master["Droit Public_M2"]]},
-    ]
-
-    # ── UEs Master Droit Privé ───────────────────────────────────────────────────
-    ues_prive = [
-        # M1
-        {'code': 'DPR5101', 'name': 'Droit Civil Approfondi', 'niveaux': [niveaux_master["Droit Privé_M1"]]},
-        {'code': 'DPR5102', 'name': 'Droit des Contrats Spéciaux', 'niveaux': [niveaux_master["Droit Privé_M1"]]},
-        {'code': 'DPR5103', 'name': 'Droit des Sûretés', 'niveaux': [niveaux_master["Droit Privé_M1"]]},
-        {'code': 'DPR5104', 'name': 'Droit de la Famille', 'niveaux': [niveaux_master["Droit Privé_M1"]]},
-        {'code': 'DPR5105', 'name': 'Droit des Successions', 'niveaux': [niveaux_master["Droit Privé_M1"]]},
-        # M2
-        {'code': 'DPR5201', 'name': 'Droit International Privé', 'niveaux': [niveaux_master["Droit Privé_M2"]]},
-        {'code': 'DPR5202', 'name': 'Droit des Responsabilités', 'niveaux': [niveaux_master["Droit Privé_M2"]]},
-        {'code': 'DPR5203', 'name': 'Droit Immobilier', 'niveaux': [niveaux_master["Droit Privé_M2"]]},
-        {'code': 'DPR5204', 'name': 'Droit Pénal des Affaires', 'niveaux': [niveaux_master["Droit Privé_M2"]]},
-        {'code': 'TDR5205', 'name': 'Mémoire Droit Privé', 'niveaux': [niveaux_master["Droit Privé_M2"]]},
-    ]
-
-    # ── Fusionner toutes les UEs ───────────────────────────────────────────────────
-    all_ues = ues_tc + ues_contentieux + ues_affaires + ues_public + ues_prive
-
-    created_ues = []
-    for ue_data in all_ues:
-        ue, created = UE.objects.get_or_create(
-            code=ue_data['code'],
-            defaults={
-                'name': ue_data['name'],
-                'coef': 5.00,  # Coefficient par défaut
-            }
-        )
-        
-        # Associer les niveaux
-        for niveau in ue_data['niveaux']:
-            ue.niveaux.add(niveau)
-        
-        if created:
-            print(f"   ✔ UE : {ue.code} — {ue.name}")
-        
-        # Créer un ECUE par défaut pour cette UE
-        ecue, ecue_created = ECUE.objects.get_or_create(
-            ue=ue,
-            code=f"{ue.code}01",
-            defaults={
-                'name': f"{ue.name} - Cours",
-                'coef': 5.00,
-            }
-        )
-        
-        if ecue_created:
-            print(f"   ✔ ECUE : {ecue.code} — {ecue.name}")
-        
-        created_ues.append(ue)
-
-    print(f"   ✔ Toutes les UEs créées avec leurs ECUEs")
-    return created_ues
-
-
-# =============================================================================
-# 👥  3. UTILISATEURS (Admin + Biblio + Étudiants)
-# =============================================================================
-
-def seed_utilisateurs():
-    from apps.users.models import User
-    from apps.users.models.etudiant_models import Etudiant
-    from apps.users.models.bibliothecaire_models import Bibliothecaire
-    from apps.filiere.models import Filiere
-    from apps.niveau.models import Niveau
-
-    print("\n👥 Création des utilisateurs 2025...")
-
-    # ── Récupérer la structure ─────────────────────────────────────────────────
-    filiere_tc = Filiere.objects.get(name="Droit (Tronc Commun)")
-    filieres_master = {
-        "Droit des Contentieux": Filiere.objects.get(name="Droit des Contentieux"),
-        "Droit des Affaires": Filiere.objects.get(name="Droit des Affaires"),
-        "Droit Public": Filiere.objects.get(name="Droit Public"),
-        "Droit Privé": Filiere.objects.get(name="Droit Privé"),
-    }
-    filiere_doctorat = Filiere.objects.get(name="Doctorat")
-    
-    niveaux_tc = {
-        'L1': Niveau.objects.get(filiere=filiere_tc, name='L1'),
-        'L2': Niveau.objects.get(filiere=filiere_tc, name='L2'),
-        'L3': Niveau.objects.get(filiere=filiere_tc, name='L3'),
-    }
-    
-    niveaux_master = {}
-    for spec_name, filiere in filieres_master.items():
-        niveaux_master[f"{spec_name}_M1"] = Niveau.objects.get(filiere=filiere, name='M1')
-        niveaux_master[f"{spec_name}_M2"] = Niveau.objects.get(filiere=filiere, name='M2')
-    
-    doctorat = Niveau.objects.get(filiere=filiere_doctorat, name="DOCTORAT")
-
-    # ── Administrateur ────────────────────────────────────────────────────────
-    admin, created = User.objects.get_or_create(
-        email='admin@universite-ci.edu',
-        defaults={
-            'first_name': 'Kouamé',
-            'last_name':  'BROU',
-            'phone':      '+2250701000001',
-            'user_type':  User.UserType.ADMINISTRATEUR,
-            'is_staff':   True,
-            'is_superuser': True,
-            'is_active':  True,
-            'is_2fa_enabled': True,
-            'password':   make_password('Admin@2025!'),
-        }
-    )
     if created:
-        print(f"   ✔ Admin : {admin.email}")
+        instance = model(**lookup)
 
-    # ── Bibliothécaires ───────────────────────────────────────────────────────
-    biblios_data = [
-        {
-            'email':      'biblio.kone@universite-ci.edu',
-            'first_name': 'Mariam',
-            'last_name':  'KONÉ',
-            'phone':      '+2250701000002',
-            'badge':      'BIB-2025-001',
-        },
-        {
-            'email':      'biblio.diallo@universite-ci.edu',
-            'first_name': 'Seydou',
-            'last_name':  'DIALLO',
-            'phone':      '+2250701000003',
-            'badge':      'BIB-2025-002',
-        },
-    ]
+    for field_name, value in values.items():
+        setattr(instance, field_name, value)
 
-    for bd in biblios_data:
-        user, created = User.objects.get_or_create(
-            email=bd['email'],
-            defaults={
-                'first_name':     bd['first_name'],
-                'last_name':      bd['last_name'],
-                'phone':          bd['phone'],
-                'user_type':      User.UserType.BIBLIOTHECAIRE,
-                'is_staff':       True,
-                'is_active':      True,
-                'is_2fa_enabled': True,
-                'password':       make_password('Biblio@2025!'),
-            }
-        )
-        Bibliothecaire.objects.get_or_create(
-            user=user,
-            defaults={
-                'badge_number':          bd['badge'],
-                'date_prise_poste':      datetime(2025, 1, 6).date(),
-                'peut_gerer_documents':  True,
-                'peut_gerer_utilisateurs': True,
-            }
-        )
-        if created:
-            print(f"   ✔ Biblio : {user.email}")
+    if getattr(instance, "deleted", None):
+        instance.deleted = None
+        if hasattr(instance, "deleted_by_cascade"):
+            instance.deleted_by_cascade = False
 
-    # ── Étudiants Licence (Tronc Commun) ─────────────────────────────────────────
-    etudiants_licence = {
-        'L1': [
-            {'email': 'etu.l1.kone@etud-ci.edu',   'first_name': 'Yao',   'last_name': 'KONÉ',   'phone': '+2250701003001'},
-            {'email': 'etu.l1.brou@etud-ci.edu',    'first_name': 'Aminata',  'last_name': 'BROU',    'phone': '+2250701003002'},
-            {'email': 'etu.l1.toure@etud-ci.edu',    'first_name': 'Moussa',    'last_name': 'TOURÉ',    'phone': '+2250701003003'},
-        ],
-        'L2': [
-            {'email': 'etu.l2.sangare@etud-ci.edu', 'first_name': 'Fatou',    'last_name': 'SANGARÉ', 'phone': '+2250701004001'},
-            {'email': 'etu.l2.ouedraogo@etud-ci.edu','first_name': 'Kouakou',   'last_name': 'OUÉDRAOGO', 'phone': '+2250701004002'},
-            {'email': 'etu.l2.kone@etud-ci.edu',     'first_name': 'Adama',     'last_name': 'KONÉ',     'phone': '+2250701004003'},
-        ],
-        'L3': [
-            {'email': 'etu.l3.coulibaly@etud-ci.edu','first_name': 'Brahima',   'last_name': 'COULIBALY', 'phone': '+2250701005001'},
-            {'email': 'etu.l3.diarra@etud-ci.edu',   'first_name': 'Mariam',    'last_name': 'DIARRA',   'phone': '+2250701005002'},
-            {'email': 'etu.l3.bamba@etud-ci.edu',    'first_name': 'Seydou',    'last_name': 'BAMBA',    'phone': '+2250701005003'},
-        ],
-    }
+    if validate and hasattr(instance, "full_clean"):
+        instance.full_clean()
 
-    # ── Étudiants Master (Spécialisés) ────────────────────────────────────────────
-    etudiants_master = {
-        "Droit des Contentieux_M1": [
-            {'email': 'etu.dc.m1.kouassi@etud-ci.edu',   'first_name': 'Adjoua',   'last_name': 'KOUASSI',   'phone': '+2250701001001'},
-            {'email': 'etu.dc.m1.traore@etud-ci.edu',    'first_name': 'Ibrahim',  'last_name': 'TRAORÉ',    'phone': '+2250701001002'},
-        ],
-        "Droit des Contentieux_M2": [
-            {'email': 'etu.dc.m2.ouattara@etud-ci.edu',  'first_name': 'Salimata', 'last_name': 'OUATTARA',  'phone': '+2250701002001'},
-            {'email': 'etu.dc.m2.koffi@etud-ci.edu',     'first_name': 'Jean-Marc','last_name': 'KOFFI',     'phone': '+2250701002002'},
-        ],
-        "Droit des Affaires_M1": [
-            {'email': 'etu.da.m1.yao@etud-ci.edu',       'first_name': 'Brice',    'last_name': 'YAO',       'phone': '+2250701006001'},
-            {'email': 'etu.da.m1.coulibaly@etud-ci.edu', 'first_name': 'Fatou',    'last_name': 'COULIBALY', 'phone': '+2250701006002'},
-        ],
-        "Droit des Affaires_M2": [
-            {'email': 'etu.da.m2.gbagbo@etud-ci.edu',    'first_name': 'Olivia',   'last_name': 'GBAGBO',    'phone': '+2250701007001'},
-            {'email': 'etu.da.m2.n_goran@etud-ci.edu',   'first_name': 'Rachel',   'last_name': "N'GORAN",   'phone': '+2250701007002'},
-        ],
-        "Droit Public_M1": [
-            {'email': 'etu.dp.m1.kone@etud-ci.edu',      'first_name': 'Kouamé',   'last_name': 'KONÉ',      'phone': '+2250701008001'},
-            {'email': 'etu.dp.m1.bamba@etud-ci.edu',     'first_name': 'Moussa',   'last_name': 'BAMBA',     'phone': '+2250701008002'},
-        ],
-        "Droit Public_M2": [
-            {'email': 'etu.dp.m2.ahui@etud-ci.edu',      'first_name': 'Prisca',   'last_name': 'AHUI',      'phone': '+2250701009001'},
-            {'email': 'etu.dp.m2.diallo@etud-ci.edu',    'first_name': 'Seydou',   'last_name': 'DIALLO',    'phone': '+2250701009002'},
-        ],
-        "Droit Privé_M1": [
-            {'email': 'etu.dpr.m1.toure@etud-ci.edu',    'first_name': 'Aminata',  'last_name': 'TOURÉ',    'phone': '+2250701010001'},
-            {'email': 'etu.dpr.m1.sangare@etud-ci.edu',  'first_name': 'Brahima',  'last_name': 'SANGARÉ',  'phone': '+2250701010002'},
-        ],
-        "Droit Privé_M2": [
-            {'email': 'etu.dpr.m2.ouedraogo@etud-ci.edu','first_name': 'Kouakou',   'last_name': 'OUÉDRAOGO', 'phone': '+2250701011001'},
-            {'email': 'etu.dpr.m2.diarra@etud-ci.edu',   'first_name': 'Mariam',    'last_name': 'DIARRA',   'phone': '+2250701011002'},
-        ],
-    }
-
-    # ── Doctorants ─────────────────────────────────────────────────────────────
-    doctorants = [
-        {'email': 'doc.these1@doctorant-ci.edu', 'first_name': 'Jean', 'last_name': 'KOUADJA', 'phone': '+2250702000001'},
-        {'email': 'doc.these2@doctorant-ci.edu', 'first_name': 'Marie', 'last_name': 'TOURE', 'phone': '+2250702000002'},
-        {'email': 'doc.these3@doctorant-ci.edu', 'first_name': 'Paul', 'last_name': 'SANGARE', 'phone': '+2250702000003'},
-    ]
-
-    activation_base = timezone.now() - timedelta(days=10)  # activés il y a 10 jours
-
-    # ── Création étudiants Licence ───────────────────────────────────────────────
-    for niveau_name, etudiants_list in etudiants_licence.items():
-        niveau = niveaux_tc[niveau_name]
-        for ed in etudiants_list:
-            user, created = User.objects.get_or_create(
-                email=ed['email'],
-                defaults={
-                    'first_name': ed['first_name'],
-                    'last_name':  ed['last_name'],
-                    'phone':      ed['phone'],
-                    'user_type':  User.UserType.ETUDIANT,
-                    'is_active':  True,
-                    'password':   make_password('Etudiant@2025!'),
-                }
-            )
-            Etudiant.objects.get_or_create(
-                user=user,
-                defaults={
-                    'filiere':           filiere_tc,
-                    'niveau':            niveau,
-                    'annee_inscription': 2025,
-                    'compte_active_le':  activation_base,
-                    'compte_expire_le':  activation_base + timedelta(days=30),
-                    'nb_reactivations':  0,
-                }
-            )
-            if created:
-                print(f"   ✔ Étudiant {niveau_name} : {user.get_full_name()} ({user.matricule})")
-
-    # ── Création étudiants Master ─────────────────────────────────────────────────
-    for niveau_key, etudiants_list in etudiants_master.items():
-        niveau = niveaux_master[niveau_key]
-        specialite = niveau_key.replace('_M1', '').replace('_M2', '')
-        filiere = filieres_master[specialite]
-        
-        for ed in etudiants_list:
-            user, created = User.objects.get_or_create(
-                email=ed['email'],
-                defaults={
-                    'first_name': ed['first_name'],
-                    'last_name':  ed['last_name'],
-                    'phone':      ed['phone'],
-                    'user_type':  User.UserType.ETUDIANT,
-                    'is_active':  True,
-                    'password':   make_password('Etudiant@2025!'),
-                }
-            )
-            Etudiant.objects.get_or_create(
-                user=user,
-                defaults={
-                    'filiere':           filiere,
-                    'niveau':            niveau,
-                    'annee_inscription': 2025,
-                    'compte_active_le':  activation_base,
-                    'compte_expire_le':  activation_base + timedelta(days=30),
-                    'nb_reactivations':  0,
-                }
-            )
-            if created:
-                print(f"   ✔ Étudiant {specialite} : {user.get_full_name()} ({user.matricule})")
-
-    # ── Création Doctorants ───────────────────────────────────────────────────────
-    for dd in doctorants:
-        user, created = User.objects.get_or_create(
-            email=dd['email'],
-            defaults={
-                'first_name': dd['first_name'],
-                'last_name':  dd['last_name'],
-                'phone':      dd['phone'],
-                'user_type':  User.UserType.ETUDIANT,
-                'is_active':  True,
-                'password':   make_password('Doctorant@2025!'),
-            }
-        )
-        Etudiant.objects.get_or_create(
-            user=user,
-            defaults={
-                'filiere':           filiere_doctorat,
-                'niveau':            doctorat,
-                'annee_inscription': 2025,
-                'compte_active_le':  activation_base,
-                'compte_expire_le':  activation_base + timedelta(days=365),  # 1 an pour doctorants
-                'nb_reactivations':  0,
-            }
-        )
-        if created:
-            print(f"   ✔ Doctorant : {user.get_full_name()} ({user.matricule})")
-
-    print("   ✔ Tous les utilisateurs créés avec succès")
-
-# 📄  4. DOCUMENTS (Cours, Examens, Mémoires, Thèses)
-# =============================================================================
-
-def seed_documents():
-    from apps.documents.models import Document
-    from apps.ue.models import UE, ECUE
-    from apps.users.models import User
-    from apps.filiere.models import Filiere
-    from apps.niveau.models import Niveau
-
-    print("\n📄 Création des documents 2025...")
-
-    # ── Récupérer la structure ─────────────────────────────────────────────────
-    filiere_tc = Filiere.objects.get(name="Droit (Tronc Commun)")
-    filieres_master = {
-        "Droit des Contentieux": Filiere.objects.get(name="Droit des Contentieux"),
-        "Droit des Affaires": Filiere.objects.get(name="Droit des Affaires"),
-        "Droit Public": Filiere.objects.get(name="Droit Public"),
-        "Droit Privé": Filiere.objects.get(name="Droit Privé"),
-    }
-    filiere_doctorat = Filiere.objects.get(name="Doctorat")
-    
-    niveaux_tc = {
-        'L1': Niveau.objects.get(filiere=filiere_tc, name='L1'),
-        'L2': Niveau.objects.get(filiere=filiere_tc, name='L2'),
-        'L3': Niveau.objects.get(filiere=filiere_tc, name='L3'),
-    }
-    
-    niveaux_master = {}
-    for spec_name, filiere in filieres_master.items():
-        niveaux_master[f"{spec_name}_M1"] = Niveau.objects.get(filiere=filiere, name='M1')
-        niveaux_master[f"{spec_name}_M2"] = Niveau.objects.get(filiere=filiere, name='M2')
-    
-    doctorat = Niveau.objects.get(filiere=filiere_doctorat, name="DOCTORAT")
-    
-    biblio = User.objects.get(email='biblio.kone@universite-ci.edu')
-    admin = User.objects.get(email='admin@universite-ci.edu')
-
-    # ── Documents Licence (Tronc Commun) ───────────────────────────────────────────
-    docs_licence = [
-        # L1
-        {'title': 'Cours — Introduction au droit constitutionnel', 'type': 'COURS', 'ue_code': 'DGL101', 'niveau': niveaux_tc['L1'], 'encadreur': 'Pr. KONAN Yapo', 'jours_avant': 120},
-        {'title': 'Cours — Droit civil des personnes physiques', 'type': 'COURS', 'ue_code': 'DGL102', 'niveau': niveaux_tc['L1'], 'encadreur': 'Dr. TOURE Awa', 'jours_avant': 115},
-        {'title': 'Examen L1 — Droit constitutionnel général', 'type': 'EXAMEN', 'ue_code': 'DGL101', 'niveau': niveaux_tc['L1'], 'encadreur': 'Pr. KONAN Yapo', 'jours_avant': 90},
-        
-        # L2
-        {'title': 'Cours — Droit des obligations', 'type': 'COURS', 'ue_code': 'DGL106', 'niveau': niveaux_tc['L2'], 'encadreur': 'Pr. Bamba Kouamé', 'jours_avant': 110},
-        {'title': 'Cours — Droit pénal général', 'type': 'COURS', 'ue_code': 'DGL103', 'niveau': niveaux_tc['L2'], 'encadreur': 'Dr. SANGARÉ Adama', 'jours_avant': 105},
-        {'title': 'Examen L2 — Droit des obligations', 'type': 'EXAMEN', 'ue_code': 'DGL106', 'niveau': niveaux_tc['L2'], 'encadreur': 'Pr. Bamba Kouamé', 'jours_avant': 80},
-        
-        # L3
-        {'title': 'Cours — Droit administratif général', 'type': 'COURS', 'ue_code': 'DGL108', 'niveau': niveaux_tc['L3'], 'encadreur': 'Pr. OUATTARA Bakary', 'jours_avant': 100},
-        {'title': 'Cours — Histoire du droit', 'type': 'COURS', 'ue_code': 'DGL105', 'niveau': niveaux_tc['L3'], 'encadreur': 'Dr. KONATE Fatou', 'jours_avant': 95},
-        {'title': 'Examen L3 — Droit administratif', 'type': 'EXAMEN', 'ue_code': 'DGL108', 'niveau': niveaux_tc['L3'], 'encadreur': 'Pr. OUATTARA Bakary', 'jours_avant': 70},
-    ]
-
-    # ── Documents Master Droit des Contentieux ───────────────────────────────────────
-    docs_contentieux = [
-        # M1
-        {'title': 'Cours — Le contrôle par voie d\'action', 'type': 'COURS', 'ue_code': 'COC2102', 'niveau': niveaux_master["Droit des Contentieux_M1"], 'encadreur': 'Pr. ASSI Jean-Baptiste', 'jours_avant': 90},
-        {'title': 'Cours — La responsabilité administrative', 'type': 'COURS', 'ue_code': 'COA2101', 'niveau': niveaux_master["Droit des Contentieux_M1"], 'encadreur': 'Dr. KONAN Adjoua Marie', 'jours_avant': 85},
-        {'title': 'Examen M1 — Contentieux constitutionnel', 'type': 'EXAMEN', 'ue_code': 'COC2102', 'niveau': niveaux_master["Droit des Contentieux_M1"], 'encadreur': 'Pr. ASSI Jean-Baptiste', 'jours_avant': 60},
-        
-        # M2
-        {'title': 'Cours — Contentieux électoral', 'type': 'COURS', 'ue_code': 'CPB2301', 'niveau': niveaux_master["Droit des Contentieux_M2"], 'encadreur': 'Pr. ASSI Jean-Baptiste', 'jours_avant': 45},
-        {'title': 'Cours — Arbitrage régional et national', 'type': 'COURS', 'ue_code': 'DER2303', 'niveau': niveaux_master["Droit des Contentieux_M2"], 'encadreur': 'Pr. KOFFI Edmond', 'jours_avant': 40},
-        {'title': 'Mémoire — L\'arbitrage OHADA face aux juridictions étatiques', 'type': 'MEMOIRE', 'ue_code': 'TCC2307', 'niveau': niveaux_master["Droit des Contentieux_M2"], 'auteur': 'OUATTARA Salimata', 'encadreur': 'Pr. KOFFI Edmond', 'jours_avant': 30},
-        {'title': 'Mémoire — Le recours en annulation devant le Conseil d\'État', 'type': 'MEMOIRE', 'ue_code': 'TCC2307', 'niveau': niveaux_master["Droit des Contentieux_M2"], 'auteur': 'KOFFI Jean-Marc', 'encadreur': 'Dr. KONAN Adjoua Marie', 'jours_avant': 25},
-    ]
-
-    # ── Documents Master Droit des Affaires ───────────────────────────────────────────
-    docs_affaires = [
-        # M1
-        {'title': 'Cours — Droit des sociétés commerciales', 'type': 'COURS', 'ue_code': 'DAC3101', 'niveau': niveaux_master["Droit des Affaires_M1"], 'encadreur': 'Pr. YAO Kouamé', 'jours_avant': 88},
-        {'title': 'Cours — Droit bancaire et financier', 'type': 'COURS', 'ue_code': 'DAC3103', 'niveau': niveaux_master["Droit des Affaires_M1"], 'encadreur': 'Dr. KONE Mariam', 'jours_avant': 83},
-        {'title': 'Examen M1 — Droit des sociétés', 'type': 'EXAMEN', 'ue_code': 'DAC3101', 'niveau': niveaux_master["Droit des Affaires_M1"], 'encadreur': 'Pr. YAO Kouamé', 'jours_avant': 58},
-        
-        # M2
-        {'title': 'Cours — Propriété intellectuelle', 'type': 'COURS', 'ue_code': 'DAC3203', 'niveau': niveaux_master["Droit des Affaires_M2"], 'encadreur': 'Pr. DIALLO Seydou', 'jours_avant': 43},
-        {'title': 'Mémoire — La protection des marques en Afrique', 'type': 'MEMOIRE', 'ue_code': 'TDA3205', 'niveau': niveaux_master["Droit des Affaires_M2"], 'auteur': 'GBAGBO Olivia', 'encadreur': 'Pr. DIALLO Seydou', 'jours_avant': 28},
-    ]
-
-    # ── Documents Master Droit Public ─────────────────────────────────────────────────
-    docs_public = [
-        # M1
-        {'title': 'Cours — Droit administratif approfondi', 'type': 'COURS', 'ue_code': 'DPB4101', 'niveau': niveaux_master["Droit Public_M1"], 'encadreur': 'Pr. TOURE Issiaka', 'jours_avant': 86},
-        {'title': 'Cours — Droit des libertés fondamentales', 'type': 'COURS', 'ue_code': 'DPB4103', 'niveau': niveaux_master["Droit Public_M1"], 'encadreur': 'Dr. BONI Clarisse', 'jours_avant': 81},
-        {'title': 'Examen M1 — Droit administratif', 'type': 'EXAMEN', 'ue_code': 'DPB4101', 'niveau': niveaux_master["Droit Public_M1"], 'encadreur': 'Pr. TOURE Issiaka', 'jours_avant': 56},
-        
-        # M2
-        {'title': 'Cours — Droit international public', 'type': 'COURS', 'ue_code': 'DPB4201', 'niveau': niveaux_master["Droit Public_M2"], 'encadreur': 'Pr. KOFFI Edmond', 'jours_avant': 41},
-        {'title': 'Mémoire — Le contentieux électoral en Afrique de l\'Ouest', 'type': 'MEMOIRE', 'ue_code': 'TDP4205', 'niveau': niveaux_master["Droit Public_M2"], 'auteur': 'AHUI Prisca', 'encadreur': 'Pr. TOURE Issiaka', 'jours_avant': 26},
-    ]
-
-    # ── Documents Master Droit Privé ─────────────────────────────────────────────────
-    docs_prive = [
-        # M1
-        {'title': 'Cours — Droit civil approfondi', 'type': 'COURS', 'ue_code': 'DPR5101', 'niveau': niveaux_master["Droit Privé_M1"], 'encadreur': 'Pr. COULIBALY Nathalie', 'jours_avant': 84},
-        {'title': 'Cours — Droit des sûretés', 'type': 'COURS', 'ue_code': 'DPR5103', 'niveau': niveaux_master["Droit Privé_M1"], 'encadreur': 'Dr. GNANGUI Pamela', 'jours_avant': 79},
-        {'title': 'Examen M1 — Droit civil', 'type': 'EXAMEN', 'ue_code': 'DPR5101', 'niveau': niveaux_master["Droit Privé_M1"], 'encadreur': 'Pr. COULIBALY Nathalie', 'jours_avant': 54},
-        
-        # M2
-        {'title': 'Cours — Droit international privé', 'type': 'COURS', 'ue_code': 'DPR5201', 'niveau': niveaux_master["Droit Privé_M2"], 'encadreur': 'Pr. CAMARA Bintou', 'jours_avant': 39},
-        {'title': 'Mémoire — La preuve électronique dans le contentieux civil', 'type': 'MEMOIRE', 'ue_code': 'TDR5205', 'niveau': niveaux_master["Droit Privé_M2"], 'auteur': 'N\'GORAN Rachel', 'encadreur': 'Dr. GNANGUI Pamela', 'jours_avant': 24},
-    ]
-
-    # ── Thèses Doctorat ─────────────────────────────────────────────────────────────
-    docs_theses = [
-        {'title': 'Thèse — L\'effectivité des décisions de la COUR CEDEAO des droits de l\'homme', 'type': 'THESE', 'niveau': doctorat, 'filiere': filiere_doctorat, 'auteur': 'KOUADJA Jean', 'encadreur': 'Pr. ASSI Jean-Baptiste', 'jours_avant': 20},
-        {'title': 'Thèse — Le contentieux électoral en Afrique de l\'Ouest : étude comparée', 'type': 'THESE', 'niveau': doctorat, 'filiere': filiere_doctorat, 'auteur': 'TOURE Marie', 'encadreur': 'Pr. TOURE Issiaka', 'jours_avant': 18},
-        {'title': 'Thèse — L\'arbitrage international en matière d\'investissement', 'type': 'THESE', 'niveau': doctorat, 'filiere': filiere_doctorat, 'auteur': 'SANGARE Paul', 'encadreur': 'Pr. KOFFI Edmond', 'jours_avant': 15},
-    ]
-
-    # ── Fusionner tous les documents ─────────────────────────────────────────────────
-    all_docs = docs_licence + docs_contentieux + docs_affaires + docs_public + docs_prive + docs_theses
-
-    created_docs = []
-    for dd in all_docs:
-        # Récupérer l'UE si spécifiée
-        ue = None
-        ecue = None
-        if 'ue_code' in dd:
-            try:
-                ue = UE.objects.get(code=dd['ue_code'])
-                # Récupérer le premier ECUE de cette UE
-                ecue = ue.ecues.first()
-                if not ecue:
-                    print(f"   ⚠️ Aucun ECUE trouvé pour l'UE: {dd['ue_code']}")
-                    continue
-            except UE.DoesNotExist:
-                print(f"   ⚠️ UE non trouvée: {dd['ue_code']}")
-                continue
-
-        date_c = timezone.now() - timedelta(days=dd['jours_avant'])
-        
-        doc, created = Document.objects.get_or_create(
-            title=dd['title'],
-            defaults={
-                'type': dd['type'],
-                'filiere': dd.get('filiere', ue.niveaux.first().filiere if ue else None),
-                'niveau': dd['niveau'],
-                'ue': ecue,  # Utiliser ECUE au lieu de UE
-                'auteur': dd.get('auteur', ''),
-                'encadreur': dd.get('encadreur', ''),
-                'file_path': f"documents/{dd['type'].lower()}/{dd['title'][:30].replace(' ','_')}.pdf",
-                'description': f"Document de {dd['type'].lower()} — {ue.code if ue else 'Doctorat'} — 2025",
-                'ajoute_par': dd.get('ajoute_par', biblio),
-                'created_at': date_c,
-            }
-        )
-        created_docs.append(doc)
-        if created:
-            print(f"   ✔ [{dd['type']}] {dd['title'][:60]}...")
-
-    print(f"   ✔ {len(created_docs)} documents créés au total")
-    return created_docs
+    instance.save()
+    return instance, created
 
 
-# =============================================================================
-# 👁️  5. CONSULTATIONS, FAVORIS & HISTORIQUE ACTIONS
-# =============================================================================
-
-SEED_EMAIL_ALIASES = {
-    'etu.kouassi@etud-ci.edu': 'etu.dc.m1.kouassi@etud-ci.edu',
-    'etu.traore@etud-ci.edu': 'etu.dc.m1.traore@etud-ci.edu',
-    'etu.yao@etud-ci.edu': 'etu.da.m1.yao@etud-ci.edu',
-    'etu.coulibaly@etud-ci.edu': 'etu.da.m1.coulibaly@etud-ci.edu',
-    'etu.gbagbo@etud-ci.edu': 'etu.da.m2.gbagbo@etud-ci.edu',
-    'etu.ouattara@etud-ci.edu': 'etu.dc.m2.ouattara@etud-ci.edu',
-    'etu.koffi@etud-ci.edu': 'etu.dc.m2.koffi@etud-ci.edu',
-    'etu.n_goran@etud-ci.edu': 'etu.da.m2.n_goran@etud-ci.edu',
-    'etu.bamba@etud-ci.edu': 'etu.dp.m1.bamba@etud-ci.edu',
-    'etu.ahui@etud-ci.edu': 'etu.dp.m2.ahui@etud-ci.edu',
-}
-
-SEED_DOCUMENT_ALIASES = {
-    'cours la procedure du contentieux civil': 'Cours — Droit civil approfondi',
-    'cours contentieux penal': 'Cours — Droit pénal général',
-    'examen 2024 contentieux administratif': 'Examen M1 — Droit administratif',
-    'cours voies d execution': 'Cours — Droit des sûretés',
-    'examen 2024 droit de l arbitrage': 'Cours — Arbitrage régional et national',
-    'cours les grands principes du contentieux international': 'Cours — Droit international public',
-    'cours la classification du formalisme': 'Cours — Droit civil des personnes physiques',
-    'examen 2024 contentieux international penal': 'Cours — Droit international public',
-    'cours contentieux de la cour internationale': 'Cours — Droit international public',
-    'examen 2024 contentieux international public': 'Cours — Droit international public',
-}
+def direct_update(instance, **fields):
+    if not fields:
+        return instance
+    get_all_manager(type(instance)).filter(pk=instance.pk).update(**fields)
+    for field_name, value in fields.items():
+        setattr(instance, field_name, value)
+    return instance
 
 
-def _normalize_seed_text(value: str) -> str:
-    normalized = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
-    cleaned = ''.join(ch if ch.isalnum() else ' ' for ch in normalized.lower())
-    return ' '.join(cleaned.split())
+def normalize_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    cleaned = "".join(ch if ch.isalnum() else " " for ch in normalized.lower())
+    return " ".join(cleaned.split())
 
 
-def _resolve_seed_email(email: str) -> str:
+def build_document_path(doc_type: str, title: str) -> str:
+    slug = normalize_text(title).replace(" ", "_")[:80]
+    return f"documents/{doc_type.lower()}/{slug}.pdf"
+
+
+def specialite_name_for(filiere_name: str, niveau_name: str) -> str | None:
+    if niveau_name in NIVEAUX_TRONC_COMMUN:
+        return None
+    if niveau_name == "DOCTORAT":
+        return SPECIALITE_DOCTORAT_NAME
+    return filiere_name
+
+
+def resolve_seed_email(email: str) -> str:
     return SEED_EMAIL_ALIASES.get(email, email)
 
 
-def _resolve_seed_document(tous_docs, titre_partiel):
-    normalized_target = _normalize_seed_text(titre_partiel)
-    aliased_title = SEED_DOCUMENT_ALIASES.get(normalized_target)
-    if aliased_title:
-        normalized_target = _normalize_seed_text(aliased_title)
-
+def resolve_document(documents, title_fragment: str):
+    target = normalize_text(title_fragment)
+    target_tokens = {token for token in target.split() if len(token) > 2}
     best_doc = None
     best_score = 0
-    target_tokens = {token for token in normalized_target.split() if len(token) > 2}
 
-    for doc in tous_docs:
-        normalized_title = _normalize_seed_text(doc.title)
-        if normalized_target in normalized_title or normalized_title in normalized_target:
+    for doc in documents:
+        normalized_title = normalize_text(doc.title)
+        if target in normalized_title or normalized_title in target:
             return doc
 
-        title_tokens = {token for token in normalized_title.split() if len(token) > 2}
-        score = len(target_tokens & title_tokens)
+        score = len(target_tokens & {token for token in normalized_title.split() if len(token) > 2})
         if score > best_score:
             best_doc = doc
             best_score = score
@@ -771,269 +115,742 @@ def _resolve_seed_document(tous_docs, titre_partiel):
     return best_doc if best_score >= 2 else None
 
 
-def seed_consultations_favoris():
-    from apps.users.models import User
-    from apps.users.models.etudiant_models import Etudiant
-    from apps.documents.models import Document
-    from apps.consultations.models import Consultation
-    from apps.favoris.models import Favori
-    from apps.history.models import HistoriqueActionService
+def build_context():
+    from apps.filiere.models import Filiere
+    from apps.niveau.models import Niveau
+    from apps.specialites.models import Specialite
+    from apps.ue.models import UE, ECUE
 
-    print("\n👁️  Création des consultations, favoris & logs 2025...")
+    context = {"filieres": {}, "niveaux": {}, "specialites": {}, "ues": {}, "ecues": {}}
 
-    # Récupérer tous les étudiants
-    etudiants = list(Etudiant.objects.select_related('user').all())
-    # Récupérer tous les documents
-    tous_docs  = list(Document.objects.all())
-    biblio     = User.objects.get(email='biblio.kone@universite-ci.edu')
-    admin_user = User.objects.get(email='admin@universite-ci.edu')
+    for filiere in Filiere.objects.all():
+        context["filieres"][filiere.name] = filiere
 
-    if not etudiants or not tous_docs:
-        print("   ⚠️  Pas d'étudiants ou de documents trouvés, skip.")
-        return
+    for niveau in Niveau.objects.select_related("filiere").all():
+        context["niveaux"][(niveau.filiere.name, niveau.name)] = niveau
 
-    # ── Interactions par étudiant ─────────────────────────────────────────────
-    interactions = [
-        # (email_etudiant, [(titre_partiel_doc, type_action, duree_sec, en_favori)])
-        ('etu.kouassi@etud-ci.edu', [
-            ('Cours — Le contrôle par voie', 'VUE', 420, True),
-            ('Cours — La responsabilité', 'VUE', 360, True),
-            ('Examen 2024 — Contentieux constitutionnel', 'VUE', 180, True),
-            ('Mémoire — L\'arbitrage OHADA', 'VUE', 600, False),
-        ]),
-        ('etu.traore@etud-ci.edu', [
-            ('Cours — La procédure du contentieux civil', 'VUE', 500, True),
-            ('Cours — Contentieux pénal', 'VUE', 310, False),
-            ('Examen 2024 — Contentieux administratif', 'VUE', 240, True),
-            ('Thèse — Le contentieux électoral', 'VUE', 720, True),
-        ]),
-        ('etu.yao@etud-ci.edu', [
-            ('Cours — Voies d\'exécution', 'VUE', 280, False),
-            ('Cours — Arbitrage régional', 'VUE', 450, True),
-            ('Examen 2024 — Droit de l\'arbitrage', 'VUE', 200, True),
-            ('Mémoire — Le recours en annulation', 'VUE', 530, False),
-        ]),
-        ('etu.coulibaly@etud-ci.edu', [
-            ('Cours — Les grands principes du contentieux international', 'VUE', 390, True),
-            ('Cours — La classification du formalisme', 'VUE', 260, True),
-            ('Examen 2024 — Contentieux international pénal', 'VUE', 300, True),
-            ('Thèse — L\'effectivité des décisions', 'VUE', 810, True),
-        ]),
-        ('etu.gbagbo@etud-ci.edu', [
-            ('Cours — Contentieux de la Cour Internationale', 'VUE', 340, False),
-            ('Cours — Le contentieux des sociétés', 'VUE', 290, True),
-            ('Mémoire — La preuve électronique', 'VUE', 480, True),
-            ('Examen 2024 — Contentieux international public', 'VUE', 150, False),
-        ]),
-        # M2
-        ('etu.ouattara@etud-ci.edu', [
-            ('Cours — Contentieux électoral', 'VUE', 520, True),
-            ('Cours — Arbitrage régional', 'VUE', 410, True),
-            ('Mémoire — L\'arbitrage OHADA', 'VUE', 900, True),
-            ('Thèse — Le contentieux électoral', 'VUE', 660, True),
-        ]),
-        ('etu.koffi@etud-ci.edu', [
-            ('Cours — Les grands principes du contentieux international', 'VUE', 430, True),
-            ('Examen 2024 — Contentieux international pénal', 'VUE', 370, True),
-            ('Mémoire — Le recours en annulation', 'VUE', 580, False),
-            ('Thèse — L\'effectivité des décisions', 'VUE', 750, False),
-        ]),
-        ('etu.n_goran@etud-ci.edu', [
-            ('Cours — La classification du formalisme', 'VUE', 300, True),
-            ('Mémoire — La preuve électronique', 'VUE', 680, True),
-            ('Examen 2024 — Droit de l\'arbitrage', 'VUE', 220, True),
-            ('Cours — Arbitrage régional', 'VUE', 490, False),
-        ]),
-        ('etu.bamba@etud-ci.edu', [
-            ('Thèse — Le contentieux électoral', 'VUE', 840, True),
-            ('Cours — Contentieux électoral', 'VUE', 360, True),
-            ('Examen 2024 — Contentieux constitutionnel', 'VUE', 190, False),
-            ('Cours — Le contrôle par voie', 'VUE', 440, False),
-        ]),
-        ('etu.ahui@etud-ci.edu', [
-            ('Thèse — L\'effectivité des décisions', 'VUE', 920, True),
-            ('Cours — Voies d\'exécution', 'VUE', 260, False),
-            ('Mémoire — L\'arbitrage OHADA', 'VUE', 510, True),
-            ('Examen 2024 — Contentieux administratif', 'VUE', 280, True),
-        ]),
-    ]
+    for specialite in Specialite.objects.select_related("niveau", "niveau__filiere").all():
+        key = (specialite.niveau.filiere.name, specialite.niveau.name)
+        context["specialites"][key] = specialite
 
-    # ── Recherches effectuées ─────────────────────────────────────────────────
-    recherches = [
-        ('etu.kouassi@etud-ci.edu',  'arbitrage OHADA',          -20),
-        ('etu.traore@etud-ci.edu',   'contentieux civil',         -18),
-        ('etu.yao@etud-ci.edu',      'procédures d\'urgence',     -15),
-        ('etu.coulibaly@etud-ci.edu','preuve électronique',        -12),
-        ('etu.gbagbo@etud-ci.edu',   'contentieux international',  -10),
-        ('etu.ouattara@etud-ci.edu', 'mémoire arbitrage',          -8),
-        ('etu.koffi@etud-ci.edu',    'examen droit pénal',         -6),
-        ('etu.n_goran@etud-ci.edu',  'rédaction actes juridiques', -5),
-        ('etu.bamba@etud-ci.edu',    'contentieux électoral',      -4),
-        ('etu.ahui@etud-ci.edu',     'CEDEAO droits homme',        -3),
-    ]
+    for ue in UE.objects.prefetch_related("niveaux").all():
+        context["ues"][ue.code] = ue
 
-    nb_consultations = 0
-    nb_favoris       = 0
-    nb_recherches    = 0
-    unmatched_docs   = []
-    missing_users    = []
+    for ecue in ECUE.objects.select_related("ue").all():
+        context["ecues"][ecue.ue.code] = ecue
 
-    for email_etu, actions in interactions:
-        resolved_email = _resolve_seed_email(email_etu)
-        try:
-            user = User.objects.get(email=resolved_email)
-            etu  = Etudiant.objects.get(user=user)
-        except (User.DoesNotExist, Etudiant.DoesNotExist):
-            missing_users.append(email_etu)
-            continue
+    return context
 
-        for i, (titre_partiel, type_action, duree, en_favori) in enumerate(actions):
-            # Trouver le document correspondant
-            doc = _resolve_seed_document(tous_docs, titre_partiel)
-            if not doc:
-                unmatched_docs.append((email_etu, titre_partiel))
+
+FILIERE_LEVELS = {
+    "Droit (Tronc Commun)": ["L1", "L2", "L3"],
+    "Droit des Contentieux": ["M1", "M2"],
+    "Droit des Affaires": ["M1", "M2"],
+    "Droit Public": ["M1", "M2"],
+    "Droit Privé": ["M1", "M2"],
+    "Doctorat": ["DOCTORAT"],
+}
+
+UE_SEEDS = [
+    ("DGL101", "Droit Constitutionnel General", [("Droit (Tronc Commun)", "L1")]),
+    ("DGL102", "Droit Civil des Personnes", [("Droit (Tronc Commun)", "L1")]),
+    ("DGL103", "Droit Penal General", [("Droit (Tronc Commun)", "L1"), ("Droit (Tronc Commun)", "L2")]),
+    ("DGL104", "Introduction au Droit Administratif", [("Droit (Tronc Commun)", "L1")]),
+    ("DGL105", "Histoire du Droit", [("Droit (Tronc Commun)", "L2"), ("Droit (Tronc Commun)", "L3")]),
+    ("DGL106", "Droit des Obligations", [("Droit (Tronc Commun)", "L2"), ("Droit (Tronc Commun)", "L3")]),
+    ("DGL107", "Droit Constitutionnel Ivoirien", [("Droit (Tronc Commun)", "L3")]),
+    ("DGL108", "Droit Administratif General", [("Droit (Tronc Commun)", "L3")]),
+    ("COC2102", "Contentieux constitutionnel", [("Droit des Contentieux", "M1")]),
+    ("COA2101", "Contentieux administratif", [("Droit des Contentieux", "M1")]),
+    ("CCI2103", "Contentieux civil", [("Droit des Contentieux", "M1")]),
+    ("COF2104", "Contentieux fiscal", [("Droit des Contentieux", "M1")]),
+    ("CPN2105", "Contentieux penal", [("Droit des Contentieux", "M1")]),
+    ("CIP2201", "Contentieux international public", [("Droit des Contentieux", "M2")]),
+    ("CIE2202", "Contentieux international economique", [("Droit des Contentieux", "M2")]),
+    ("CCM2203", "Contentieux commercial", [("Droit des Contentieux", "M2")]),
+    ("VEX2204", "Voies d'execution et procedure d'urgence", [("Droit des Contentieux", "M2")]),
+    ("DPR2206", "Droit de la preuve", [("Droit des Contentieux", "M2")]),
+    ("CPB2301", "Contentieux interne public specialise", [("Droit des Contentieux", "M2")]),
+    ("CIS2302", "Contentieux international specialise", [("Droit des Contentieux", "M2")]),
+    ("DER2303", "Droit de l'arbitrage", [("Droit des Contentieux", "M2")]),
+    ("DIC2304", "Contentieux international penal", [("Droit des Contentieux", "M2")]),
+    ("RAC2305", "Redaction d'actes", [("Droit des Contentieux", "M2")]),
+    ("TCC2307", "Memoire", [("Droit des Contentieux", "M2")]),
+    ("DAC3101", "Droit des Societes", [("Droit des Affaires", "M1")]),
+    ("DAC3102", "Droit Commercial General", [("Droit des Affaires", "M1")]),
+    ("DAC3103", "Droit Bancaire et Financier", [("Droit des Affaires", "M1")]),
+    ("DAC3104", "Droit Fiscal des Entreprises", [("Droit des Affaires", "M1")]),
+    ("DAC3105", "Droit de la Concurrence", [("Droit des Affaires", "M1")]),
+    ("DAC3201", "Droit International des Affaires", [("Droit des Affaires", "M2")]),
+    ("DAC3202", "Droit Boursier et Marches Financiers", [("Droit des Affaires", "M2")]),
+    ("DAC3203", "Propriete Intellectuelle", [("Droit des Affaires", "M2")]),
+    ("DAC3204", "Droit des Nouvelles Technologies", [("Droit des Affaires", "M2")]),
+    ("TDA3205", "Memoire Droit des Affaires", [("Droit des Affaires", "M2")]),
+    ("DPB4101", "Droit Administratif Approfondi", [("Droit Public", "M1")]),
+    ("DPB4102", "Droit Constitutionnel Compare", [("Droit Public", "M1")]),
+    ("DPB4103", "Droit des Libertes Fondamentales", [("Droit Public", "M1")]),
+    ("DPB4104", "Droit Public Economique", [("Droit Public", "M1")]),
+    ("DPB4105", "Droit de l'Urbanisme", [("Droit Public", "M1")]),
+    ("DPB4201", "Droit International Public", [("Droit Public", "M2")]),
+    ("DPB4202", "Droit Communautaire", [("Droit Public", "M2")]),
+    ("DPB4203", "Droit de l'Environnement", [("Droit Public", "M2")]),
+    ("DPB4204", "Droit Fiscal Public", [("Droit Public", "M2")]),
+    ("TDP4205", "Memoire Droit Public", [("Droit Public", "M2")]),
+    ("DPR5101", "Droit Civil Approfondi", [("Droit Privé", "M1")]),
+    ("DPR5102", "Droit des Contrats Speciaux", [("Droit Privé", "M1")]),
+    ("DPR5103", "Droit des Suretes", [("Droit Privé", "M1")]),
+    ("DPR5104", "Droit de la Famille", [("Droit Privé", "M1")]),
+    ("DPR5105", "Droit des Successions", [("Droit Privé", "M1")]),
+    ("DPR5201", "Droit International Prive", [("Droit Privé", "M2")]),
+    ("DPR5202", "Droit des Responsabilites", [("Droit Privé", "M2")]),
+    ("DPR5203", "Droit Immobilier", [("Droit Privé", "M2")]),
+    ("DPR5204", "Droit Penal des Affaires", [("Droit Privé", "M2")]),
+    ("TDR5205", "Memoire Droit Privé", [("Droit Privé", "M2")]),
+]
+
+ADMIN_SEED = {
+    "email": "admin@universite-ci.edu",
+    "first_name": "Kouame",
+    "last_name": "BROU",
+    "phone": "+2250701000001",
+}
+
+BIBLIOTHECAIRES = [
+    {
+        "email": "biblio.kone@universite-ci.edu",
+        "first_name": "Mariam",
+        "last_name": "KONE",
+        "phone": "+2250701000002",
+        "badge": "BIB-2025-001",
+    },
+    {
+        "email": "biblio.diallo@universite-ci.edu",
+        "first_name": "Seydou",
+        "last_name": "DIALLO",
+        "phone": "+2250701000003",
+        "badge": "BIB-2025-002",
+    },
+]
+
+ETUDIANTS_LICENCE = {
+    "L1": [
+        {"email": "etu.l1.kone@etud-ci.edu", "first_name": "Yao", "last_name": "KONE", "phone": "+2250701003001"},
+        {"email": "etu.l1.brou@etud-ci.edu", "first_name": "Aminata", "last_name": "BROU", "phone": "+2250701003002"},
+        {"email": "etu.l1.toure@etud-ci.edu", "first_name": "Moussa", "last_name": "TOURE", "phone": "+2250701003003"},
+    ],
+    "L2": [
+        {"email": "etu.l2.sangare@etud-ci.edu", "first_name": "Fatou", "last_name": "SANGARE", "phone": "+2250701004001"},
+        {"email": "etu.l2.ouedraogo@etud-ci.edu", "first_name": "Kouakou", "last_name": "OUEDRAOGO", "phone": "+2250701004002"},
+        {"email": "etu.l2.kone@etud-ci.edu", "first_name": "Adama", "last_name": "KONE", "phone": "+2250701004003"},
+    ],
+    "L3": [
+        {"email": "etu.l3.coulibaly@etud-ci.edu", "first_name": "Brahima", "last_name": "COULIBALY", "phone": "+2250701005001"},
+        {"email": "etu.l3.diarra@etud-ci.edu", "first_name": "Mariam", "last_name": "DIARRA", "phone": "+2250701005002"},
+        {"email": "etu.l3.bamba@etud-ci.edu", "first_name": "Seydou", "last_name": "BAMBA", "phone": "+2250701005003"},
+    ],
+}
+
+ETUDIANTS_SPECIALISES = {
+    ("Droit des Contentieux", "M1"): [
+        {"email": "etu.dc.m1.kouassi@etud-ci.edu", "first_name": "Adjoua", "last_name": "KOUASSI", "phone": "+2250701001001"},
+        {"email": "etu.dc.m1.traore@etud-ci.edu", "first_name": "Ibrahim", "last_name": "TRAORE", "phone": "+2250701001002"},
+    ],
+    ("Droit des Contentieux", "M2"): [
+        {"email": "etu.dc.m2.ouattara@etud-ci.edu", "first_name": "Salimata", "last_name": "OUATTARA", "phone": "+2250701002001"},
+        {"email": "etu.dc.m2.koffi@etud-ci.edu", "first_name": "Jean-Marc", "last_name": "KOFFI", "phone": "+2250701002002"},
+    ],
+    ("Droit des Affaires", "M1"): [
+        {"email": "etu.da.m1.yao@etud-ci.edu", "first_name": "Brice", "last_name": "YAO", "phone": "+2250701006001"},
+        {"email": "etu.da.m1.coulibaly@etud-ci.edu", "first_name": "Fatou", "last_name": "COULIBALY", "phone": "+2250701006002"},
+    ],
+    ("Droit des Affaires", "M2"): [
+        {"email": "etu.da.m2.gbagbo@etud-ci.edu", "first_name": "Olivia", "last_name": "GBAGBO", "phone": "+2250701007001"},
+        {"email": "etu.da.m2.n_goran@etud-ci.edu", "first_name": "Rachel", "last_name": "N'GORAN", "phone": "+2250701007002"},
+    ],
+    ("Droit Public", "M1"): [
+        {"email": "etu.dp.m1.kone@etud-ci.edu", "first_name": "Kouame", "last_name": "KONE", "phone": "+2250701008001"},
+        {"email": "etu.dp.m1.bamba@etud-ci.edu", "first_name": "Moussa", "last_name": "BAMBA", "phone": "+2250701008002"},
+    ],
+    ("Droit Public", "M2"): [
+        {"email": "etu.dp.m2.ahui@etud-ci.edu", "first_name": "Prisca", "last_name": "AHUI", "phone": "+2250701009001"},
+        {"email": "etu.dp.m2.diallo@etud-ci.edu", "first_name": "Seydou", "last_name": "DIALLO", "phone": "+2250701009002"},
+    ],
+    ("Droit Privé", "M1"): [
+        {"email": "etu.dpr.m1.toure@etud-ci.edu", "first_name": "Aminata", "last_name": "TOURE", "phone": "+2250701010001"},
+        {"email": "etu.dpr.m1.sangare@etud-ci.edu", "first_name": "Brahima", "last_name": "SANGARE", "phone": "+2250701010002"},
+    ],
+    ("Droit Privé", "M2"): [
+        {"email": "etu.dpr.m2.ouedraogo@etud-ci.edu", "first_name": "Kouakou", "last_name": "OUEDRAOGO", "phone": "+2250701011001"},
+        {"email": "etu.dpr.m2.diarra@etud-ci.edu", "first_name": "Mariam", "last_name": "DIARRA", "phone": "+2250701011002"},
+    ],
+    ("Doctorat", "DOCTORAT"): [
+        {"email": "doc.these1@doctorant-ci.edu", "first_name": "Jean", "last_name": "KOUADJA", "phone": "+2250702000001"},
+        {"email": "doc.these2@doctorant-ci.edu", "first_name": "Marie", "last_name": "TOURE", "phone": "+2250702000002"},
+        {"email": "doc.these3@doctorant-ci.edu", "first_name": "Paul", "last_name": "SANGARE", "phone": "+2250702000003"},
+    ],
+}
+
+DOCUMENT_SEEDS = [
+    {"title": "Cours - Introduction au droit constitutionnel", "type": "COURS", "filiere": "Droit (Tronc Commun)", "niveau": "L1", "ue_code": "DGL101", "encadreur": "Pr. KONAN Yapo", "days_ago": 120},
+    {"title": "Cours - Droit civil des personnes physiques", "type": "COURS", "filiere": "Droit (Tronc Commun)", "niveau": "L1", "ue_code": "DGL102", "encadreur": "Dr. TOURE Awa", "days_ago": 115},
+    {"title": "Examen L1 - Droit constitutionnel general", "type": "EXAMEN", "filiere": "Droit (Tronc Commun)", "niveau": "L1", "ue_code": "DGL101", "encadreur": "Pr. KONAN Yapo", "days_ago": 90},
+    {"title": "Cours - Droit des obligations", "type": "COURS", "filiere": "Droit (Tronc Commun)", "niveau": "L2", "ue_code": "DGL106", "encadreur": "Pr. BAMBA Kouame", "days_ago": 110},
+    {"title": "Cours - Droit penal general", "type": "COURS", "filiere": "Droit (Tronc Commun)", "niveau": "L2", "ue_code": "DGL103", "encadreur": "Dr. SANGARE Adama", "days_ago": 105},
+    {"title": "Examen L2 - Droit des obligations", "type": "EXAMEN", "filiere": "Droit (Tronc Commun)", "niveau": "L2", "ue_code": "DGL106", "encadreur": "Pr. BAMBA Kouame", "days_ago": 80},
+    {"title": "Cours - Droit administratif general", "type": "COURS", "filiere": "Droit (Tronc Commun)", "niveau": "L3", "ue_code": "DGL108", "encadreur": "Pr. OUATTARA Bakary", "days_ago": 100},
+    {"title": "Cours - Histoire du droit", "type": "COURS", "filiere": "Droit (Tronc Commun)", "niveau": "L3", "ue_code": "DGL105", "encadreur": "Dr. KONATE Fatou", "days_ago": 95},
+    {"title": "Examen L3 - Droit administratif", "type": "EXAMEN", "filiere": "Droit (Tronc Commun)", "niveau": "L3", "ue_code": "DGL108", "encadreur": "Pr. OUATTARA Bakary", "days_ago": 70},
+    {"title": "Cours - Le controle par voie d'action", "type": "COURS", "filiere": "Droit des Contentieux", "niveau": "M1", "ue_code": "COC2102", "encadreur": "Pr. ASSI Jean-Baptiste", "days_ago": 90},
+    {"title": "Cours - La responsabilite administrative", "type": "COURS", "filiere": "Droit des Contentieux", "niveau": "M1", "ue_code": "COA2101", "encadreur": "Dr. KONAN Adjoua Marie", "days_ago": 85},
+    {"title": "Examen M1 - Contentieux constitutionnel", "type": "EXAMEN", "filiere": "Droit des Contentieux", "niveau": "M1", "ue_code": "COC2102", "encadreur": "Pr. ASSI Jean-Baptiste", "days_ago": 60},
+    {"title": "Cours - Contentieux electoral", "type": "COURS", "filiere": "Droit des Contentieux", "niveau": "M2", "ue_code": "CPB2301", "encadreur": "Pr. ASSI Jean-Baptiste", "days_ago": 45},
+    {"title": "Cours - Arbitrage regional et national", "type": "COURS", "filiere": "Droit des Contentieux", "niveau": "M2", "ue_code": "DER2303", "encadreur": "Pr. KOFFI Edmond", "days_ago": 40},
+    {"title": "Memoire - L'arbitrage OHADA face aux juridictions etatiques", "type": "MEMOIRE", "filiere": "Droit des Contentieux", "niveau": "M2", "ue_code": "TCC2307", "auteur": "OUATTARA Salimata", "encadreur": "Pr. KOFFI Edmond", "days_ago": 30},
+    {"title": "Memoire - Le recours en annulation devant le Conseil d'Etat", "type": "MEMOIRE", "filiere": "Droit des Contentieux", "niveau": "M2", "ue_code": "TCC2307", "auteur": "KOFFI Jean-Marc", "encadreur": "Dr. KONAN Adjoua Marie", "days_ago": 25},
+    {"title": "Cours - Droit des societes commerciales", "type": "COURS", "filiere": "Droit des Affaires", "niveau": "M1", "ue_code": "DAC3101", "encadreur": "Pr. YAO Kouame", "days_ago": 88},
+    {"title": "Cours - Droit bancaire et financier", "type": "COURS", "filiere": "Droit des Affaires", "niveau": "M1", "ue_code": "DAC3103", "encadreur": "Dr. KONE Mariam", "days_ago": 83},
+    {"title": "Examen M1 - Droit des societes", "type": "EXAMEN", "filiere": "Droit des Affaires", "niveau": "M1", "ue_code": "DAC3101", "encadreur": "Pr. YAO Kouame", "days_ago": 58},
+    {"title": "Cours - Propriete intellectuelle", "type": "COURS", "filiere": "Droit des Affaires", "niveau": "M2", "ue_code": "DAC3203", "encadreur": "Pr. DIALLO Seydou", "days_ago": 43},
+    {"title": "Memoire - La protection des marques en Afrique", "type": "MEMOIRE", "filiere": "Droit des Affaires", "niveau": "M2", "ue_code": "TDA3205", "auteur": "GBAGBO Olivia", "encadreur": "Pr. DIALLO Seydou", "days_ago": 28},
+    {"title": "Cours - Droit administratif approfondi", "type": "COURS", "filiere": "Droit Public", "niveau": "M1", "ue_code": "DPB4101", "encadreur": "Pr. TOURE Issiaka", "days_ago": 86},
+    {"title": "Cours - Droit des libertes fondamentales", "type": "COURS", "filiere": "Droit Public", "niveau": "M1", "ue_code": "DPB4103", "encadreur": "Dr. BONI Clarisse", "days_ago": 81},
+    {"title": "Examen M1 - Droit administratif", "type": "EXAMEN", "filiere": "Droit Public", "niveau": "M1", "ue_code": "DPB4101", "encadreur": "Pr. TOURE Issiaka", "days_ago": 56},
+    {"title": "Cours - Droit international public", "type": "COURS", "filiere": "Droit Public", "niveau": "M2", "ue_code": "DPB4201", "encadreur": "Pr. KOFFI Edmond", "days_ago": 41},
+    {"title": "Memoire - Le contentieux electoral en Afrique de l'Ouest", "type": "MEMOIRE", "filiere": "Droit Public", "niveau": "M2", "ue_code": "TDP4205", "auteur": "AHUI Prisca", "encadreur": "Pr. TOURE Issiaka", "days_ago": 26},
+    {"title": "Cours - Droit civil approfondi", "type": "COURS", "filiere": "Droit Privé", "niveau": "M1", "ue_code": "DPR5101", "encadreur": "Pr. COULIBALY Nathalie", "days_ago": 84},
+    {"title": "Cours - Droit des suretes", "type": "COURS", "filiere": "Droit Privé", "niveau": "M1", "ue_code": "DPR5103", "encadreur": "Dr. GNANGUI Pamela", "days_ago": 79},
+    {"title": "Examen M1 - Droit civil", "type": "EXAMEN", "filiere": "Droit Privé", "niveau": "M1", "ue_code": "DPR5101", "encadreur": "Pr. COULIBALY Nathalie", "days_ago": 54},
+    {"title": "Cours - Droit international prive", "type": "COURS", "filiere": "Droit Privé", "niveau": "M2", "ue_code": "DPR5201", "encadreur": "Pr. CAMARA Bintou", "days_ago": 39},
+    {"title": "Memoire - La preuve electronique dans le contentieux civil", "type": "MEMOIRE", "filiere": "Droit Privé", "niveau": "M2", "ue_code": "TDR5205", "auteur": "N'GORAN Rachel", "encadreur": "Dr. GNANGUI Pamela", "days_ago": 24},
+    {"title": "These - L'effectivite des decisions de la Cour CEDEAO des droits de l'homme", "type": "THESE", "filiere": "Doctorat", "niveau": "DOCTORAT", "auteur": "KOUADJA Jean", "encadreur": "Pr. ASSI Jean-Baptiste", "days_ago": 20},
+    {"title": "These - Le contentieux electoral en Afrique de l'Ouest : etude comparee", "type": "THESE", "filiere": "Doctorat", "niveau": "DOCTORAT", "auteur": "TOURE Marie", "encadreur": "Pr. TOURE Issiaka", "days_ago": 18},
+    {"title": "These - L'arbitrage international en matiere d'investissement", "type": "THESE", "filiere": "Doctorat", "niveau": "DOCTORAT", "auteur": "SANGARE Paul", "encadreur": "Pr. KOFFI Edmond", "days_ago": 15},
+]
+
+INTERACTION_SEEDS = [
+    ("etu.dc.m1.kouassi@etud-ci.edu", [
+        ("Cours - Le controle par voie d'action", 420, True),
+        ("Cours - La responsabilite administrative", 360, True),
+        ("Examen M1 - Contentieux constitutionnel", 180, True),
+        ("Memoire - L'arbitrage OHADA face aux juridictions etatiques", 600, False),
+    ]),
+    ("etu.dc.m1.traore@etud-ci.edu", [
+        ("Cours - Droit civil approfondi", 500, True),
+        ("Cours - Droit penal general", 310, False),
+        ("Examen M1 - Droit administratif", 240, True),
+        ("These - Le contentieux electoral en Afrique de l'Ouest : etude comparee", 720, True),
+    ]),
+    ("etu.da.m1.yao@etud-ci.edu", [
+        ("Cours - Droit des suretes", 280, False),
+        ("Cours - Arbitrage regional et national", 450, True),
+        ("Cours - Arbitrage regional et national", 200, True),
+        ("Memoire - Le recours en annulation devant le Conseil d'Etat", 530, False),
+    ]),
+    ("etu.dpr.m1.toure@etud-ci.edu", [
+        ("Cours - Droit international public", 390, True),
+        ("Cours - Droit civil des personnes physiques", 260, True),
+        ("These - L'effectivite des decisions de la Cour CEDEAO des droits de l'homme", 810, True),
+        ("Memoire - La preuve electronique dans le contentieux civil", 430, True),
+    ]),
+    ("etu.da.m2.gbagbo@etud-ci.edu", [
+        ("Cours - Propriete intellectuelle", 340, False),
+        ("Cours - Droit des societes commerciales", 290, True),
+        ("Memoire - La protection des marques en Afrique", 480, True),
+        ("Cours - Droit international public", 150, False),
+    ]),
+    ("etu.dc.m2.ouattara@etud-ci.edu", [
+        ("Cours - Contentieux electoral", 520, True),
+        ("Cours - Arbitrage regional et national", 410, True),
+        ("Memoire - L'arbitrage OHADA face aux juridictions etatiques", 900, True),
+        ("These - Le contentieux electoral en Afrique de l'Ouest : etude comparee", 660, True),
+    ]),
+    ("etu.dc.m2.koffi@etud-ci.edu", [
+        ("Cours - Droit international public", 430, True),
+        ("Memoire - Le recours en annulation devant le Conseil d'Etat", 580, False),
+        ("These - L'effectivite des decisions de la Cour CEDEAO des droits de l'homme", 750, False),
+        ("Cours - Droit administratif approfondi", 260, True),
+    ]),
+    ("etu.da.m2.n_goran@etud-ci.edu", [
+        ("Cours - Droit civil des personnes physiques", 300, True),
+        ("Memoire - La preuve electronique dans le contentieux civil", 680, True),
+        ("Cours - Arbitrage regional et national", 490, False),
+        ("Cours - Propriete intellectuelle", 220, True),
+    ]),
+    ("etu.dp.m2.ahui@etud-ci.edu", [
+        ("These - Le contentieux electoral en Afrique de l'Ouest : etude comparee", 840, True),
+        ("Cours - Contentieux electoral", 360, True),
+        ("Examen M1 - Contentieux constitutionnel", 190, False),
+        ("Cours - Le controle par voie d'action", 440, False),
+    ]),
+    ("etu.dp.m2.diallo@etud-ci.edu", [
+        ("These - L'effectivite des decisions de la Cour CEDEAO des droits de l'homme", 920, True),
+        ("Cours - Droit des suretes", 260, False),
+        ("Memoire - L'arbitrage OHADA face aux juridictions etatiques", 510, True),
+        ("Examen M1 - Droit administratif", 280, True),
+    ]),
+]
+
+SEARCH_SEEDS = [
+    ("etu.dc.m1.kouassi@etud-ci.edu", "arbitrage OHADA", -20),
+    ("etu.dc.m1.traore@etud-ci.edu", "contentieux civil", -18),
+    ("etu.da.m1.yao@etud-ci.edu", "procedures d'urgence", -15),
+    ("etu.dpr.m1.toure@etud-ci.edu", "preuve electronique", -12),
+    ("etu.da.m2.gbagbo@etud-ci.edu", "contentieux international", -10),
+    ("etu.dc.m2.ouattara@etud-ci.edu", "memoire arbitrage", -8),
+    ("etu.dc.m2.koffi@etud-ci.edu", "examen droit penal", -6),
+    ("etu.da.m2.n_goran@etud-ci.edu", "redaction actes juridiques", -5),
+    ("etu.dp.m2.ahui@etud-ci.edu", "contentieux electoral", -4),
+    ("etu.dp.m2.diallo@etud-ci.edu", "CEDEAO droits homme", -3),
+]
+
+SEED_EMAIL_ALIASES = {
+    "etu.kouassi@etud-ci.edu": "etu.dc.m1.kouassi@etud-ci.edu",
+    "etu.traore@etud-ci.edu": "etu.dc.m1.traore@etud-ci.edu",
+    "etu.yao@etud-ci.edu": "etu.da.m1.yao@etud-ci.edu",
+    "etu.coulibaly@etud-ci.edu": "etu.da.m1.coulibaly@etud-ci.edu",
+    "etu.gbagbo@etud-ci.edu": "etu.da.m2.gbagbo@etud-ci.edu",
+    "etu.ouattara@etud-ci.edu": "etu.dc.m2.ouattara@etud-ci.edu",
+    "etu.koffi@etud-ci.edu": "etu.dc.m2.koffi@etud-ci.edu",
+    "etu.n_goran@etud-ci.edu": "etu.da.m2.n_goran@etud-ci.edu",
+    "etu.bamba@etud-ci.edu": "etu.dp.m1.bamba@etud-ci.edu",
+    "etu.ahui@etud-ci.edu": "etu.dp.m2.ahui@etud-ci.edu",
+}
+
+
+def seed_all(seed_history: bool = True):
+    context = seed_filieres_niveaux()
+    context = seed_ues_ecues(context)
+    seed_utilisateurs(context)
+    seed_documents(context)
+    seed_consultations_favoris(seed_history=seed_history)
+    print("\nSEED 2025 termine avec succes.\n")
+
+
+@transaction.atomic
+def seed_filieres_niveaux():
+    from apps.filiere.models import Filiere
+    from apps.niveau.models import Niveau
+    from apps.specialites.models import Specialite
+
+    print("Creation filieres, niveaux et specialites...")
+
+    created_filieres = 0
+    created_niveaux = 0
+    created_specialites = 0
+    context = {"filieres": {}, "niveaux": {}, "specialites": {}, "ues": {}, "ecues": {}}
+
+    for filiere_name, level_names in FILIERE_LEVELS.items():
+        filiere, filiere_created = upsert_instance(Filiere, {"name": filiere_name})
+        created_filieres += int(filiere_created)
+        context["filieres"][filiere_name] = filiere
+
+        for level_name in level_names:
+            niveau, niveau_created = upsert_instance(Niveau, {"filiere": filiere, "name": level_name})
+            created_niveaux += int(niveau_created)
+            context["niveaux"][(filiere_name, level_name)] = niveau
+
+            specialite_name = specialite_name_for(filiere_name, level_name)
+            if not specialite_name:
                 continue
 
-            # Créer la consultation
-            debut = timezone.now() - timedelta(days=15 - i, hours=i * 2)
-            fin   = debut + timedelta(seconds=duree)
-
-            _, created = Consultation.objects.get_or_create(
-                user=user,
-                document=doc,
-                debut_consultation=debut,
-                defaults={
-                    'type_consultation': type_action,
-                    'fin_consultation':  fin,
-                    'duree_secondes':    duree,
-                    'ip_address':        f'192.168.1.{10 + i}',
-                    'user_agent':        'Mozilla/5.0 (Windows NT 10.0) Chrome/120.0',
-                }
+            specialite, specialite_created = upsert_instance(
+                Specialite,
+                {"name": specialite_name, "niveau": niveau},
             )
-            if created:
-                nb_consultations += 1
+            created_specialites += int(specialite_created)
+            context["specialites"][(filiere_name, level_name)] = specialite
 
-            # Créer le favori si demandé
-            if en_favori:
-                _, fav_created = Favori.objects.get_or_create(
-                    etudiant=etu,
-                    document=doc
-                )
-                if fav_created:
-                    nb_favoris += 1
+    print(f"  Filieres pretes : {len(context['filieres'])} ({created_filieres} nouvelles)")
+    print(f"  Niveaux prets : {len(context['niveaux'])} ({created_niveaux} nouveaux)")
+    print(f"  Specialites pretes : {len(context['specialites'])} ({created_specialites} nouvelles)")
+    return context
 
-    # ── Recherches ────────────────────────────────────────────────────────────
-    for email_etu, query, jours in recherches:
-        resolved_email = _resolve_seed_email(email_etu)
-        try:
-            user = User.objects.get(email=resolved_email)
-        except User.DoesNotExist:
-            missing_users.append(email_etu)
+
+@transaction.atomic
+def seed_ues_ecues(context=None):
+    from apps.ue.models import UE, ECUE
+
+    context = context or build_context()
+    context.setdefault("ues", {})
+    context.setdefault("ecues", {})
+    print("\nCreation UEs et ECUEs...")
+
+    created_ues = 0
+    created_ecues = 0
+
+    for code, name, level_refs in UE_SEEDS:
+        ue, ue_created = upsert_instance(
+            UE,
+            {"code": code},
+            {"name": name, "coef": Decimal("0.00")},
+        )
+        created_ues += int(ue_created)
+        ue.niveaux.set([context["niveaux"][ref] for ref in level_refs])
+
+        ecue, ecue_created = upsert_instance(
+            ECUE,
+            {"ue": ue, "code": f"{code}01"},
+            {"name": f"{name} - Cours", "coef": Decimal("5.00")},
+        )
+        created_ecues += int(ecue_created)
+
+        ue.sync_coef_from_ecues()
+        context["ues"][code] = ue
+        context["ecues"][code] = ecue
+
+    print(f"  UEs pretes : {len(context['ues'])} ({created_ues} nouvelles)")
+    print(f"  ECUEs pretes : {len(context['ecues'])} ({created_ecues} nouvelles)")
+    return context
+
+
+def upsert_user(email: str, raw_password: str, **values):
+    from apps.users.models import User
+
+    defaults = dict(values)
+    defaults["password"] = make_password(raw_password)
+    return upsert_instance(User, {"email": email}, defaults)
+
+
+@transaction.atomic
+def seed_utilisateurs(context=None):
+    from apps.users.models import User
+    from apps.users.models.bibliothecaire_models import Bibliothecaire
+    from apps.users.models.etudiant_models import Etudiant
+
+    context = context or build_context()
+    print("\nCreation des utilisateurs...")
+
+    activation_base = timezone.now() - timedelta(days=10)
+
+    admin, _ = upsert_user(
+        ADMIN_SEED["email"],
+        ADMIN_PASSWORD,
+        first_name=ADMIN_SEED["first_name"],
+        last_name=ADMIN_SEED["last_name"],
+        phone=ADMIN_SEED["phone"],
+        user_type=User.UserType.ADMINISTRATEUR,
+        is_staff=True,
+        is_superuser=True,
+        is_active=True,
+        is_2fa_enabled=True,
+    )
+
+    for data in BIBLIOTHECAIRES:
+        user, _ = upsert_user(
+            data["email"],
+            BIBLIO_PASSWORD,
+            first_name=data["first_name"],
+            last_name=data["last_name"],
+            phone=data["phone"],
+            user_type=User.UserType.BIBLIOTHECAIRE,
+            is_staff=True,
+            is_superuser=False,
+            is_active=True,
+            is_2fa_enabled=True,
+        )
+        upsert_instance(
+            Bibliothecaire,
+            {"user": user},
+            {
+                "badge_number": data["badge"],
+                "date_prise_poste": datetime(SEED_YEAR, 1, 6).date(),
+                "peut_gerer_documents": True,
+                "peut_gerer_utilisateurs": True,
+            },
+        )
+
+    total_etudiants = 0
+
+    for niveau_name, student_rows in ETUDIANTS_LICENCE.items():
+        filiere_name = "Droit (Tronc Commun)"
+        filiere = context["filieres"][filiere_name]
+        niveau = context["niveaux"][(filiere_name, niveau_name)]
+
+        for data in student_rows:
+            user, _ = upsert_user(
+                data["email"],
+                ETUDIANT_PASSWORD,
+                first_name=data["first_name"],
+                last_name=data["last_name"],
+                phone=data["phone"],
+                user_type=User.UserType.ETUDIANT,
+                is_staff=False,
+                is_superuser=False,
+                is_active=True,
+                is_2fa_enabled=False,
+            )
+            etudiant, _ = upsert_instance(
+                Etudiant,
+                {"user": user},
+                {
+                    "filiere": filiere,
+                    "niveau": niveau,
+                    "specialite": None,
+                    "annee_inscription": SEED_YEAR,
+                    "compte_active_le": activation_base,
+                    "nb_reactivations": 0,
+                    "derniere_reactivation_par": None,
+                },
+            )
+            total_etudiants += 1
+            print(f"  Etudiant {niveau_name} : {user.email} -> {etudiant.matricule}")
+
+    for (filiere_name, niveau_name), student_rows in ETUDIANTS_SPECIALISES.items():
+        filiere = context["filieres"][filiere_name]
+        niveau = context["niveaux"][(filiere_name, niveau_name)]
+        specialite = context["specialites"].get((filiere_name, niveau_name))
+
+        for data in student_rows:
+            user, _ = upsert_user(
+                data["email"],
+                ETUDIANT_PASSWORD,
+                first_name=data["first_name"],
+                last_name=data["last_name"],
+                phone=data["phone"],
+                user_type=User.UserType.ETUDIANT,
+                is_staff=False,
+                is_superuser=False,
+                is_active=True,
+                is_2fa_enabled=False,
+            )
+            etudiant, _ = upsert_instance(
+                Etudiant,
+                {"user": user},
+                {
+                    "filiere": filiere,
+                    "niveau": niveau,
+                    "specialite": specialite,
+                    "annee_inscription": SEED_YEAR,
+                    "compte_active_le": activation_base,
+                    "nb_reactivations": 0,
+                    "derniere_reactivation_par": admin,
+                },
+            )
+            total_etudiants += 1
+            print(f"  Etudiant {niveau_name} {filiere_name} : {user.email} -> {etudiant.matricule}")
+
+    print(f"  Admin pret : {admin.email}")
+    print(f"  Bibliothecaires prets : {len(BIBLIOTHECAIRES)}")
+    print(f"  Etudiants prets : {total_etudiants}")
+
+
+@transaction.atomic
+def seed_documents(context=None):
+    from apps.documents.models import Document
+    from apps.users.models import User
+
+    context = context or build_context()
+    print("\nCreation des documents...")
+
+    biblio = User.objects.get(email="biblio.kone@universite-ci.edu")
+    created_count = 0
+    reference_date = timezone.make_aware(datetime(SEED_YEAR, 12, 31, 10, 0, 0))
+
+    for row in DOCUMENT_SEEDS:
+        filiere_name = row["filiere"]
+        niveau_name = row["niveau"]
+        filiere = context["filieres"][filiere_name]
+        niveau = context["niveaux"][(filiere_name, niveau_name)]
+        specialite = context["specialites"].get((filiere_name, niveau_name))
+        ecue = context["ecues"].get(row.get("ue_code")) if row.get("ue_code") else None
+        timestamp = reference_date - timedelta(days=row["days_ago"])
+
+        document, created = upsert_instance(
+            Document,
+            {"title": row["title"]},
+            {
+                "type": row["type"],
+                "filiere": filiere,
+                "niveau": niveau,
+                "specialite": specialite,
+                "ue": ecue,
+                "auteur": row.get("auteur", ""),
+                "encadreur": row.get("encadreur", ""),
+                "file_path": build_document_path(row["type"], row["title"]),
+                "description": f"Seed {SEED_YEAR} - {row['type']} - {filiere_name} - {niveau_name}",
+                "ajoute_par": biblio,
+            },
+        )
+        direct_update(document, created_at=timestamp, updated_at=timestamp)
+        created_count += int(created)
+
+    print(f"  Documents prets : {len(DOCUMENT_SEEDS)} ({created_count} nouveaux)")
+
+
+@transaction.atomic
+def seed_consultations_favoris(seed_history: bool = True):
+    from apps.consultations.models import Consultation
+    from apps.documents.models import Document
+    from apps.favoris.models import Favori
+    from apps.users.models import User
+    from apps.users.models.etudiant_models import Etudiant
+
+    print("\nCreation des consultations et favoris...")
+
+    documents = list(Document.objects.all())
+    if not documents:
+        print("  Aucun document trouve, section ignoree.")
+        return
+
+    base_consultation = timezone.make_aware(datetime(SEED_YEAR, 11, 20, 9, 0, 0))
+    created_consultations = 0
+    created_favoris = 0
+    created_searches = 0
+    missing_users = set()
+    missing_docs = []
+
+    for email, actions in INTERACTION_SEEDS:
+        resolved_email = resolve_seed_email(email)
+        user = User.objects.filter(email=resolved_email).first()
+        etudiant = Etudiant.objects.filter(user=user).first() if user else None
+
+        if not user or not etudiant:
+            missing_users.add(email)
             continue
 
-        _, created = Consultation.objects.get_or_create(
-            user=user,
-            type_consultation='RECHERCHE',
-            recherche_query=query,
-            defaults={
-                'debut_consultation': timezone.now() + timedelta(days=jours),
-                'ip_address':         '192.168.1.50',
-                'user_agent':         'Mozilla/5.0 (Android) Mobile',
-            }
+        for index, (title_fragment, duration_seconds, add_to_favorites) in enumerate(actions):
+            document = resolve_document(documents, title_fragment)
+            if not document:
+                missing_docs.append((email, title_fragment))
+                continue
+
+            start_at = base_consultation - timedelta(days=14 - index, hours=index * 2)
+            end_at = start_at + timedelta(seconds=duration_seconds)
+
+            consultation, created = upsert_instance(
+                Consultation,
+                {
+                    "user": user,
+                    "document": document,
+                    "type_consultation": Consultation.TypeConsultation.VUE,
+                    "debut_consultation": start_at,
+                },
+                {
+                    "fin_consultation": end_at,
+                    "duree_secondes": duration_seconds,
+                    "ip_address": f"192.168.1.{10 + index}",
+                    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0",
+                },
+            )
+            direct_update(consultation, created_at=end_at)
+            created_consultations += int(created)
+
+            if add_to_favorites:
+                _, favori_created = upsert_instance(Favori, {"etudiant": etudiant, "document": document})
+                created_favoris += int(favori_created)
+
+    for email, query, offset_days in SEARCH_SEEDS:
+        resolved_email = resolve_seed_email(email)
+        user = User.objects.filter(email=resolved_email).first()
+        if not user:
+            missing_users.add(email)
+            continue
+
+        start_at = base_consultation + timedelta(days=offset_days)
+        search, created = upsert_instance(
+            Consultation,
+            {
+                "user": user,
+                "type_consultation": Consultation.TypeConsultation.RECHERCHE,
+                "recherche_query": query,
+            },
+            {
+                "document": None,
+                "debut_consultation": start_at,
+                "fin_consultation": None,
+                "duree_secondes": None,
+                "ip_address": "192.168.1.50",
+                "user_agent": "Mozilla/5.0 (Android 14) Mobile",
+            },
         )
-        if created:
-            nb_recherches += 1
+        direct_update(search, created_at=start_at)
+        created_searches += int(created)
 
-    print(f"   ✔ {nb_consultations} consultations créées")
-    print(f"   ✔ {nb_favoris} favoris créés")
-    print(f"   ✔ {nb_recherches} recherches créées")
+    print(f"  Consultations pretes : {created_consultations} nouvelles")
+    print(f"  Favoris prets : {created_favoris} nouveaux")
+    print(f"  Recherches pretes : {created_searches} nouvelles")
 
-    # ── Historique actions MongoDB ────────────────────────────────────────────
     if missing_users:
-        print(f"   âš ï¸  {len(set(missing_users))} emails d'interactions/recherches n'ont pas Ã©tÃ© rÃ©solus")
-    if unmatched_docs:
-        print(f"   âš ï¸  {len(unmatched_docs)} interactions n'ont trouvÃ© aucun document")
-    _seed_historique_actions(admin_user, biblio)
+        print(f"  Utilisateurs introuvables : {len(missing_users)}")
+    if missing_docs:
+        print(f"  Documents introuvables : {len(missing_docs)}")
+
+    if seed_history:
+        admin_user = User.objects.filter(email="admin@universite-ci.edu").first()
+        biblio_user = User.objects.filter(email="biblio.kone@universite-ci.edu").first()
+        if admin_user and biblio_user:
+            seed_historique_actions(admin_user, biblio_user)
 
 
-def _seed_historique_actions(admin_user, biblio):
-    """Insère des logs réalistes dans MongoDB."""
-    from apps.users.models import User
-    from apps.documents.models import Document
-    from apps.history.models import HistoriqueActionService as HAS
+def seed_historique_actions(admin_user, biblio_user):
+    try:
+        from apps.documents.models import Document
+        from apps.history.models import HistoriqueActionService as HAS
+        from apps.users.models import User
+        from django.conf import settings
+    except Exception as exc:
+        print(f"  Historique ignore : {exc}")
+        return
 
-    print("\n📋 Insertion logs MongoDB (HistoriqueAction)...")
+    if not hasattr(settings, "MONGODB"):
+        print("  Historique ignore : configuration settings.MONGODB absente.")
+        return
 
-    tous_etudiants = list(User.objects.filter(user_type='ETUDIANT'))
-    tous_docs      = list(Document.objects.all()[:5])
+    print("\nInsertion des logs MongoDB...")
 
-    nb_logs = 0
+    users = list(User.objects.filter(user_type=User.UserType.ETUDIANT)[:8])
+    documents = list(Document.objects.all()[:5])
+    logs_attempted = 0
 
-    # Connexions des étudiants (7 derniers jours)
-    for i, user in enumerate(tous_etudiants):
-        result = HAS.log_connexion(
-            user=user,
-            statut='succes',
-            ip=f'192.168.1.{20 + i}',
-            ua='Mozilla/5.0 Chrome/120.0'
-        )
-        if result:
-            nb_logs += 1
+    for index, user in enumerate(users):
+        HAS.log_connexion(user=user, statut="succes", ip=f"192.168.1.{20 + index}", ua="Mozilla/5.0 Chrome/120.0")
+        logs_attempted += 1
 
-    # 3 tentatives de connexion échouées
-    for i, user in enumerate(tous_etudiants[:3]):
-        HAS.log_connexion(user=user, statut='echec', ip='10.0.0.99')
-        nb_logs += 1
+    for user in users[:3]:
+        HAS.log_connexion(user=user, statut="echec", ip="10.0.0.99", ua="Mozilla/5.0 Chrome/120.0")
+        logs_attempted += 1
 
-    # Tentatives OTP échouées
-    for user in tous_etudiants[:2]:
+    for user in users[:2]:
         HAS.log(
             action=HAS.ACTIONS.OTP_ECHEC,
             user=user,
-            statut='echec',
-            ip_address='10.0.0.50',
-            details={'type_otp': 'email', 'tentatives': 2}
+            statut="echec",
+            ip_address="10.0.0.50",
+            user_agent="Mozilla/5.0 Safari/605.1.15",
+            details={"type_otp": "email", "tentatives": 2},
         )
-        nb_logs += 1
+        logs_attempted += 1
 
-    # Activation TOTP (admin & biblio)
-    for staff_user in [admin_user, biblio]:
-        HAS.log_totp(user=staff_user, statut='succes')
-        nb_logs += 1
+    for staff_user in [admin_user, biblio_user]:
+        HAS.log_totp(user=staff_user, statut="succes", ip="192.168.0.10", ua="Mozilla/5.0 Chrome/120.0")
+        logs_attempted += 1
 
-    # Actions documents par le bibliothécaire
-    for doc in tous_docs:
-        HAS.log_document('AJOUT', user=biblio, document=doc, ip='192.168.0.1')
-        nb_logs += 1
+    for document in documents:
+        HAS.log_document("AJOUT", user=biblio_user, document=document, ip="192.168.0.1", ua="Mozilla/5.0 Chrome/120.0")
+        logs_attempted += 1
 
-    # Modifications de document par l'admin
-    if tous_docs:
+    if documents:
         HAS.log_document(
-            'MODIFICATION', user=admin_user, document=tous_docs[0],
-            details={'champ_modifie': 'description', 'ancienne_valeur': 'v1', 'nouvelle_valeur': 'v2'}
+            "MODIFICATION",
+            user=admin_user,
+            document=documents[0],
+            ip="192.168.0.2",
+            ua="Mozilla/5.0 Chrome/120.0",
+            details={"champ_modifie": "description", "ancienne_valeur": "v1", "nouvelle_valeur": "v2"},
         )
-        nb_logs += 1
+        logs_attempted += 1
 
-    # Création d'utilisateurs par l'admin
-    for etu_user in tous_etudiants[:3]:
-        HAS.log_utilisateur('CREATION', auteur=admin_user, cible_user=etu_user)
-        nb_logs += 1
+    for user in users[:3]:
+        HAS.log_utilisateur("CREATION", auteur=admin_user, cible_user=user, ip="192.168.0.3", ua="Mozilla/5.0 Chrome/120.0")
+        logs_attempted += 1
 
-    # Déconnexions
-    for user in tous_etudiants[:5]:
-        HAS.log_deconnexion(user=user, ip='192.168.1.30')
-        nb_logs += 1
+    for user in users[:5]:
+        HAS.log_deconnexion(user=user, ip="192.168.1.30", ua="Mozilla/5.0 Chrome/120.0")
+        logs_attempted += 1
 
-    print(f"   ✔ {nb_logs} entrées insérées dans MongoDB")
+    print(f"  Logs Mongo demandes : {logs_attempted}")
 
 
-# =============================================================================
-# 🚀  POINT D'ENTRÉE
-# =============================================================================
-
-if __name__ == '__main__':
-    import django
-    import os
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
-    django.setup()
+if __name__ == "__main__":
+    bootstrap_django()
     seed_all()

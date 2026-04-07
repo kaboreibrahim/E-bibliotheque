@@ -4,13 +4,12 @@
 
  RÈGLE MÉTIER :
  ┌─────────────────────────────────────────────────────────────────┐
- │  L1 / L2 / L3  → Tronc commun — PAS de spécialité             │
- │  M1 / M2       → Spécialité OBLIGATOIRE                        │
- │  DOCTORAT      → Spécialité OBLIGATOIRE                        │
+ │  L1 / L2 / L3  → Spécialité OBLIGATOIRE                        │
+ │  M1 / M2 / DOC → Spécialité OBLIGATOIRE                        │
  └─────────────────────────────────────────────────────────────────┘
 
  Relation :
-   Niveau (M1/M2/DOCTORAT) ──(1,n)── Specialite
+   Niveau (L1/L2/L3/M1/M2/DOCTORAT) ──(1,n)── Specialite
    Specialite ──(1,n)────────────── Etudiant
    Specialite ──(1,n)────────────── Document
 =============================================================================
@@ -21,10 +20,10 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from safedelete.models import SafeDeleteModel, SOFT_DELETE_CASCADE
 
-
-# Niveaux autorisant une spécialité
-NIVEAUX_AVEC_SPECIALITE = ('M1', 'M2', 'DOCTORAT')
-NIVEAUX_TRONC_COMMUN    = ('L1', 'L2', 'L3')
+from apps.specialites.rules import (
+    LIBELLE_NIVEAUX_AVEC_SPECIALITE,
+    niveau_est_tronc_commun,
+)
 
 
 # =============================================================================
@@ -33,15 +32,13 @@ NIVEAUX_TRONC_COMMUN    = ('L1', 'L2', 'L3')
 
 class Specialite(SafeDeleteModel):
     """
-    Spécialité universitaire liée à un Niveau (M1, M2 ou DOCTORAT uniquement).
+    Spécialité universitaire liée à un niveau autorisé.
 
     Exemples :
-      Niveau M1/M2  → Droit des Affaires
-      Niveau M1/M2  → Droit politique de l'environnement et du développement durable
-      Niveau M1/M2  → Master professionnel Droits de l'Homme, État de Droit et Bonne gouvernance
+      Niveau L1/L2/L3/M1/M2  → Droit des Affaires
+      Niveau L1/L2/L3/M1/M2  → Droit politique de l'environnement et du développement durable
+      Niveau L1/L2/L3/M1/M2  → Master professionnel Droits de l'Homme, État de Droit et Bonne gouvernance
       Niveau DOCTORAT → Droit des Contentieux (thèse)
-
-    Les niveaux L1, L2, L3 ne peuvent PAS avoir de spécialité (tronc commun).
     """
     _safedelete_policy = SOFT_DELETE_CASCADE
 
@@ -58,7 +55,7 @@ class Specialite(SafeDeleteModel):
         on_delete=models.CASCADE,
         related_name='specialites',
         verbose_name="Niveau",
-        help_text="Uniquement M1, M2 ou DOCTORAT."
+        help_text=f"Uniquement {LIBELLE_NIVEAUX_AVEC_SPECIALITE}."
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -77,13 +74,12 @@ class Specialite(SafeDeleteModel):
 
     def clean(self):
         """
-        Empêche d'associer une spécialité à un niveau L1, L2 ou L3.
+        Empêche d'associer une spécialité à un niveau non autorisé.
         """
-        if self.niveau and self.niveau.name in NIVEAUX_TRONC_COMMUN:
+        if self.niveau and niveau_est_tronc_commun(self.niveau.name):
             raise ValidationError(
-                f"Le niveau '{self.niveau.name}' est un tronc commun. "
-                f"Les spécialités sont réservées aux niveaux : "
-                f"{', '.join(NIVEAUX_AVEC_SPECIALITE)}."
+                f"Le niveau '{self.niveau.name}' n'accepte pas de specialite. "
+                f"Les specialites sont reservees aux niveaux : {LIBELLE_NIVEAUX_AVEC_SPECIALITE}."
             )
 
     def save(self, *args, **kwargs):
