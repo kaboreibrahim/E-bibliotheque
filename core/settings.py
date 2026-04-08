@@ -211,6 +211,9 @@ TEMPLATES = [
         ],
         'APP_DIRS': True,
         'OPTIONS': {
+            'libraries': {
+                'admin_ui': 'apps.users.templatetags.admin_ui',
+            },
             'context_processors': [
                 'django.template.context_processors.debug',
                 'django.template.context_processors.request',     

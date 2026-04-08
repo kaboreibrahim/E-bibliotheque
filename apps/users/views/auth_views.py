@@ -777,7 +777,10 @@ class LogoutView(APIView):
     @extend_schema(
         tags=['Auth — Tokens JWT'],
         summary='Déconnexion — Révoquer le refresh token',
-        description="Révoque le refresh token et l'ajoute à la blacklist. L'access token expire naturellement.",
+        description=(
+            "Révoque le refresh token du compte authentifié et l'ajoute à la "
+            "blacklist. L'access token expire naturellement."
+        ),
         request=LogoutSerializer,
         responses={
             205: OpenApiResponse(description="Déconnecté avec succès"),

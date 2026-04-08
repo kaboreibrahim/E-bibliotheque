@@ -552,6 +552,16 @@ class CommonAuthService:
         """Révoque le refresh token."""
         try:
             token = RefreshToken(refresh_token)
+            if str(token.get('user_id')) != str(user.id):
+                logger.warning(
+                    "Logout refused: refresh token ownership mismatch for user %s",
+                    user.id,
+                )
+                return AuthResult(
+                    success=False,
+                    message="Token invalide ou déjà révoqué.",
+                    http_status=400,
+                )
             token.blacklist()
             TokenBlacklistRepository.blacklist(user, str(token['jti']))
             HAS.log_deconnexion(user=user, ip=ip)
