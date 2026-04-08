@@ -290,9 +290,17 @@ class TOTPSetupConfirmSerializer(serializers.Serializer):
     Confirmation de la configuration TOTP (premier scan QR code).
     Données attendues :
       {
+        "setup_token": "optionnel-si-premiere-connexion",
         "totp_code": "123456"
       }
     """
+    setup_token = serializers.CharField(
+        required=False,
+        help_text=(
+            "Jeton temporaire retourne par l'endpoint de connexion lors "
+            "d'une premiere configuration sans session authentifiee."
+        )
+    )
     totp_code = serializers.CharField(
         max_length=6, min_length=6,
         help_text="Premier code généré après scan du QR code Google Authenticator."

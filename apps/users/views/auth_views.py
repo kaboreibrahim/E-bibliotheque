@@ -492,6 +492,7 @@ Après avoir scanné, confirmez avec `/api/auth/totp/confirm/`.
                     'data': inline_serializer('TOTPSetupData', fields={
                         'totp_secret':  drf_serializers.CharField(help_text="Secret base32 à saisir manuellement si scan impossible"),
                         'qr_uri':       drf_serializers.CharField(help_text="URI à encoder en QR code côté frontend"),
+                        'qr_code_base64': drf_serializers.CharField(help_text="Image QR encodée en base64, prête à afficher"),
                         'instructions': drf_serializers.ListField(child=drf_serializers.CharField()),
                     })
                 })
@@ -506,6 +507,7 @@ Après avoir scanné, confirmez avec `/api/auth/totp/confirm/`.
                     'data': {
                         'totp_secret': 'JBSWY3DPEHPK3PXP',
                         'qr_uri':      'otpauth://totp/Biblioth%C3%A8que%20Universitaire%20CI:admin%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=Biblioth%C3%A8que+Universitaire+CI',
+                        'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
                         'instructions': [
                             '1. Ouvrez Google Authenticator sur votre téléphone.',
                             "2. Appuyez sur '+' puis 'Scanner un QR code'.",
@@ -524,19 +526,28 @@ Après avoir scanné, confirmez avec `/api/auth/totp/confirm/`.
 
 class TOTPConfirmView(APIView):
     """POST /api/auth/totp/confirm/ — Active le 2FA après scan QR code"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     @extend_schema(
         tags=['Auth — Configuration 2FA'],
         summary='Confirmer la configuration Google Authenticator',
-        description="Valide le premier code TOTP après scan du QR code. Active définitivement le 2FA.",
+        description=(
+            "Valide le premier code TOTP après scan du QR code. "
+            "Fonctionne soit avec une session authentifiee, soit avec le "
+            "`setup_token` retourne lors d'une premiere connexion."
+        ),
         request=TOTPSetupConfirmSerializer,
         responses={
             200: OpenApiResponse(description="2FA activé avec succès"),
             400: OpenApiResponse(description="Code invalide"),
         },
         examples=[
-            OpenApiExample('Requête', request_only=True, value={'totp_code': '123456'}),
+            OpenApiExample('Requête authentifiée', request_only=True, value={'totp_code': '123456'}),
+            OpenApiExample(
+                'Requête première connexion',
+                request_only=True,
+                value={'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature', 'totp_code': '123456'}
+            ),
             OpenApiExample('Succès', response_only=True, status_codes=['200'],
                 value={'success': True,
                     'message': 'Google Authenticator activé avec succès ! Le 2FA est maintenant actif.',
@@ -547,7 +558,28 @@ class TOTPConfirmView(APIView):
         s = TOTPSetupConfirmSerializer(data=request.data)
         if not s.is_valid():
             return Response({'success': False, 'errors': s.errors, 'data': {}, 'message': 'Données invalides.'}, status=400)
-        return _resp(CommonAuthService.confirm_totp_setup(request.user, s.validated_data['totp_code']))
+        meta = _meta(request)
+        if request.user.is_authenticated:
+            return _resp(CommonAuthService.confirm_totp_setup(
+                request.user,
+                s.validated_data['totp_code'],
+                ip=meta['ip'],
+            ))
+
+        setup_token = s.validated_data.get('setup_token')
+        if not setup_token:
+            return Response({
+                'success': False,
+                'message': "Le champ 'setup_token' est requis sans session authentifiée.",
+                'data': {},
+                'errors': {'setup_token': ['Champ requis.']},
+            }, status=400)
+
+        return _resp(CommonAuthService.confirm_totp_setup_with_token(
+            setup_token=setup_token,
+            totp_code=s.validated_data['totp_code'],
+            ip=meta['ip'],
+        ))
 
 
 # =============================================================================

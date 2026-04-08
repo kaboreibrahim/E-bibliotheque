@@ -8,10 +8,14 @@
 =============================================================================
 """
 
-import pyotp
+import base64
 import logging
 from dataclasses import dataclass, field
+from io import BytesIO
 
+import pyotp
+
+from django.core import signing
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -21,6 +25,10 @@ from apps.users.repositories.code_repository import CodeVerificationRepository
 from apps.history.models import HistoriqueActionService as HAS
 
 logger = logging.getLogger(__name__)
+
+TOTP_ISSUER_NAME = "Bibliothèque Universitaire CI"
+TOTP_SETUP_TOKEN_SALT = "users.totp.setup"
+TOTP_SETUP_TOKEN_MAX_AGE_SECONDS = 900
 
 
 @dataclass
@@ -98,14 +106,10 @@ class EtudiantAuthService:
 
         # Vérifier TOTP configuré
         if not user.totp_secret or not user.is_2fa_enabled:
-            return AuthResult(
-                success=False,
-                message=(
-                    "Google Authenticator non configuré. "
-                    "Veuillez contacter la bibliothèque pour configurer votre application."
-                ),
-                errors={'totp': ['2FA non configuré.']},
-                http_status=403
+            return CommonAuthService.begin_first_login_totp_setup(
+                user=user,
+                ip=ip,
+                ua=ua,
             )
 
         # ✅ Étape 1 OK → demander le TOTP
@@ -158,33 +162,10 @@ class EtudiantAuthService:
         tokens = _generate_tokens(user)
         HAS.log_connexion(user=user, statut='succes', ip=ip)
 
-        # Info profil étudiant
-        profil = {}
-        try:
-            etu = user.profil_etudiant
-            profil = {
-                'matricule':      etu.matricule,
-                'filiere':        str(etu.filiere)    if etu.filiere    else None,
-                'niveau':         str(etu.niveau)     if etu.niveau     else None,
-                'specialite':     str(etu.specialite) if etu.specialite else None,
-                'jours_restants': etu.jours_restants,
-                'statut_compte':  etu.statut_compte,
-            }
-        except Exception:
-            pass
-
         return AuthResult(
             success=True,
             message="Connexion réussie. Bienvenue !",
-            data={
-                'access':    tokens['access'],
-                'refresh':   tokens['refresh'],
-                'user_id':   str(user.id),
-                'user_type': 'ETUDIANT',
-                'email':     user.email,
-                'nom_complet': user.get_full_name(),
-                'profil':    profil,
-            },
+            data=_build_successful_auth_payload(user, tokens),
             http_status=200
         )
 
@@ -230,11 +211,10 @@ class BibliothecaireAuthService:
             )
 
         if not user.totp_secret or not user.is_2fa_enabled:
-            return AuthResult(
-                success=False,
-                message="Google Authenticator non configuré. Contactez l'administrateur.",
-                errors={'totp': ['2FA non configuré.']},
-                http_status=403
+            return CommonAuthService.begin_first_login_totp_setup(
+                user=user,
+                ip=ip,
+                ua=ua,
             )
 
         HAS.log(
@@ -275,30 +255,10 @@ class BibliothecaireAuthService:
         tokens = _generate_tokens(user)
         HAS.log_connexion(user=user, statut='succes', ip=ip)
 
-        # Permissions bibliothécaire
-        perms = {}
-        try:
-            bib = user.profil_bibliothecaire
-            perms = {
-                'peut_gerer_documents':    bib.peut_gerer_documents,
-                'peut_gerer_utilisateurs': bib.peut_gerer_utilisateurs,
-                'badge_number':            bib.badge_number,
-            }
-        except Exception:
-            pass
-
         return AuthResult(
             success=True,
             message="Connexion réussie.",
-            data={
-                'access':      tokens['access'],
-                'refresh':     tokens['refresh'],
-                'user_id':     str(user.id),
-                'user_type':   'BIBLIOTHECAIRE',
-                'email':       user.email,
-                'nom_complet': user.get_full_name(),
-                'permissions': perms,
-            },
+            data=_build_successful_auth_payload(user, tokens),
             http_status=200
         )
 
@@ -340,11 +300,10 @@ class AdminAuthService:
             return AuthResult(success=False, message="Compte désactivé.", http_status=403)
 
         if not user.totp_secret or not user.is_2fa_enabled:
-            return AuthResult(
-                success=False,
-                message="Google Authenticator non configuré sur ce compte administrateur.",
-                errors={'totp': ['2FA non configuré.']},
-                http_status=403
+            return CommonAuthService.begin_first_login_totp_setup(
+                user=user,
+                ip=ip,
+                ua=ua,
             )
 
         HAS.log(
@@ -388,15 +347,7 @@ class AdminAuthService:
         return AuthResult(
             success=True,
             message="Connexion administrateur réussie.",
-            data={
-                'access':      tokens['access'],
-                'refresh':     tokens['refresh'],
-                'user_id':     str(user.id),
-                'user_type':   'ADMINISTRATEUR',
-                'email':       user.email,
-                'nom_complet': user.get_full_name(),
-                'is_superuser': user.is_superuser,
-            },
+            data=_build_successful_auth_payload(user, tokens),
             http_status=200
         )
 
@@ -409,40 +360,47 @@ class CommonAuthService:
     """Actions communes à tous les rôles."""
 
     @staticmethod
-    def setup_totp(user: User) -> AuthResult:
-        """Génère secret + QR code URI pour configurer Google Authenticator."""
-        import pyotp
-        secret  = pyotp.random_base32()
-        totp    = pyotp.TOTP(secret)
-        qr_uri  = totp.provisioning_uri(
-            name=user.email,
-            issuer_name="Bibliothèque Universitaire CI"
+    def begin_first_login_totp_setup(user: User, ip: str = None, ua: str = None) -> AuthResult:
+        """Retourne les informations de configuration TOTP après validation du mot de passe."""
+        setup_data = _build_login_totp_setup_payload(user)
+        HAS.log(
+            action=HAS.ACTIONS.CONNEXION_ETAPE_1,
+            user=user,
+            statut='succes',
+            ip_address=ip,
+            user_agent=ua,
+            details={'etape': '1/2 — configuration TOTP requise'}
         )
-        UserRepository.update(user, totp_secret=secret)
         return AuthResult(
             success=True,
-            message="Scannez ce QR code avec Google Authenticator, puis confirmez avec /totp/confirm/.",
-            data={
-                'totp_secret':  secret,
-                'qr_uri':       qr_uri,
-                'instructions': [
-                    "1. Ouvrez Google Authenticator sur votre téléphone.",
-                    "2. Appuyez sur '+' puis 'Scanner un QR code'.",
-                    "3. Scannez le QR code ou entrez le secret manuellement.",
-                    "4. Confirmez avec le code généré sur /totp/confirm/.",
-                ]
-            },
+            message=(
+                "Premiere connexion detectee. Scannez le QR code Google Authenticator "
+                "puis confirmez votre code TOTP."
+            ),
+            data=setup_data,
             http_status=200
         )
 
     @staticmethod
-    def confirm_totp_setup(user: User, totp_code: str) -> AuthResult:
+    def setup_totp(user: User) -> AuthResult:
+        """Génère secret + QR code URI pour configurer Google Authenticator."""
+        setup_payload = _prepare_totp_setup_payload(user, regenerate_secret=True)
+        return AuthResult(
+            success=True,
+            message="Scannez ce QR code avec Google Authenticator, puis confirmez avec /totp/confirm/.",
+            data=setup_payload,
+            http_status=200
+        )
+
+    @staticmethod
+    def confirm_totp_setup(user: User, totp_code: str, ip: str = None) -> AuthResult:
         """Active le 2FA après confirmation du premier code TOTP."""
         if not user.totp_secret:
             return AuthResult(success=False, message="Aucun secret TOTP en attente.", http_status=400)
 
         totp = pyotp.TOTP(user.totp_secret)
         if not totp.verify(totp_code, valid_window=1):
+            HAS.log_totp(user=user, statut='echec', ip=ip)
             return AuthResult(
                 success=False,
                 message="Code incorrect. Réessayez avec le code actuel de Google Authenticator.",
@@ -451,11 +409,65 @@ class CommonAuthService:
             )
 
         UserRepository.set_totp_secret(user, user.totp_secret)
+        UserRepository.update_totp_verified_at(user)
         HAS.log_totp(user=user, statut='succes')
         return AuthResult(
             success=True,
             message="Google Authenticator activé avec succès ! Le 2FA est maintenant actif sur votre compte.",
             http_status=200
+        )
+
+    @staticmethod
+    def confirm_totp_setup_with_token(setup_token: str, totp_code: str, ip: str = None) -> AuthResult:
+        """Confirme le setup TOTP sans session active après la première étape de login."""
+        try:
+            payload = signing.loads(
+                setup_token,
+                salt=TOTP_SETUP_TOKEN_SALT,
+                max_age=TOTP_SETUP_TOKEN_MAX_AGE_SECONDS,
+            )
+        except signing.SignatureExpired:
+            return AuthResult(
+                success=False,
+                message="La session de configuration TOTP a expire. Relancez la connexion.",
+                errors={'setup_token': ['Session expiree.']},
+                http_status=400,
+            )
+        except signing.BadSignature:
+            return AuthResult(
+                success=False,
+                message="Jeton de configuration TOTP invalide.",
+                errors={'setup_token': ['Jeton invalide.']},
+                http_status=400,
+            )
+
+        if payload.get('purpose') != 'totp_setup':
+            return AuthResult(
+                success=False,
+                message="Jeton de configuration TOTP invalide.",
+                errors={'setup_token': ['Jeton invalide.']},
+                http_status=400,
+            )
+
+        user = UserRepository.get_by_id(payload.get('user_id'))
+        if not user:
+            return AuthResult(
+                success=False,
+                message="Utilisateur introuvable.",
+                http_status=404,
+            )
+
+        result = CommonAuthService.confirm_totp_setup(user, totp_code, ip=ip)
+        if not result.success:
+            return result
+
+        tokens = _generate_tokens(user)
+        HAS.log_connexion(user=user, statut='succes', ip=ip)
+        return AuthResult(
+            success=True,
+            message="Google Authenticator active. Connexion reussie.",
+            data=_build_successful_auth_payload(user, tokens),
+            http_status=200,
         )
 
     @staticmethod
@@ -581,6 +593,104 @@ def _generate_tokens(user: User) -> dict:
     refresh['first_name'] = user.first_name
     refresh['last_name']  = user.last_name
     return {'access': str(refresh.access_token), 'refresh': str(refresh)}
+
+
+def _generate_qr_code_base64(qr_uri: str) -> str:
+    import qrcode
+
+    image = qrcode.make(qr_uri)
+    buffer = BytesIO()
+    image.save(buffer, format='PNG')
+    encoded = base64.b64encode(buffer.getvalue()).decode('ascii')
+    return f"data:image/png;base64,{encoded}"
+
+
+def _prepare_totp_setup_payload(user: User, regenerate_secret: bool = False) -> dict:
+    secret = user.totp_secret
+    if regenerate_secret or not secret:
+        secret = pyotp.random_base32()
+        UserRepository.update(user, totp_secret=secret)
+        user.totp_secret = secret
+
+    qr_uri = pyotp.TOTP(secret).provisioning_uri(
+        name=user.email,
+        issuer_name=TOTP_ISSUER_NAME,
+    )
+    return {
+        'totp_secret': secret,
+        'qr_uri': qr_uri,
+        'qr_code_base64': _generate_qr_code_base64(qr_uri),
+        'instructions': [
+            "1. Ouvrez Google Authenticator sur votre telephone.",
+            "2. Appuyez sur '+' puis 'Scanner un QR code'.",
+            "3. Scannez le QR code ou entrez le secret manuellement.",
+            "4. Confirmez avec le code genere sur /api/auth/totp/confirm/.",
+        ],
+    }
+
+
+def _generate_totp_setup_token(user: User) -> str:
+    return signing.dumps(
+        {'user_id': str(user.id), 'purpose': 'totp_setup'},
+        salt=TOTP_SETUP_TOKEN_SALT,
+    )
+
+
+def _build_login_totp_setup_payload(user: User) -> dict:
+    return {
+        'requires_totp': False,
+        'requires_totp_setup': True,
+        'user_id': str(user.id),
+        'user_type': user.user_type,
+        'nom_complet': user.get_full_name(),
+        'setup_token': _generate_totp_setup_token(user),
+        'totp_setup': _prepare_totp_setup_payload(user, regenerate_secret=False),
+    }
+
+
+def _build_successful_auth_payload(user: User, tokens: dict) -> dict:
+    data = {
+        'access': tokens['access'],
+        'refresh': tokens['refresh'],
+        'user_id': str(user.id),
+        'user_type': user.user_type,
+        'email': user.email,
+        'nom_complet': user.get_full_name(),
+    }
+
+    if user.user_type == 'ETUDIANT':
+        profil = {}
+        try:
+            etu = user.profil_etudiant
+            profil = {
+                'matricule': etu.matricule,
+                'filiere': str(etu.filiere) if etu.filiere else None,
+                'niveau': str(etu.niveau) if etu.niveau else None,
+                'specialite': str(etu.specialite) if etu.specialite else None,
+                'jours_restants': etu.jours_restants,
+                'statut_compte': etu.statut_compte,
+            }
+        except Exception:
+            pass
+        data['profil'] = profil
+        return data
+
+    if user.user_type == 'BIBLIOTHECAIRE':
+        permissions = {}
+        try:
+            bib = user.profil_bibliothecaire
+            permissions = {
+                'peut_gerer_documents': bib.peut_gerer_documents,
+                'peut_gerer_utilisateurs': bib.peut_gerer_utilisateurs,
+                'badge_number': bib.badge_number,
+            }
+        except Exception:
+            pass
+        data['permissions'] = permissions
+        return data
+
+    data['is_superuser'] = user.is_superuser
+    return data
 
 
 def _send_otp_email(user: User, code: str, type_code: str) -> None:
