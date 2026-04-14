@@ -64,6 +64,7 @@ class User(AbstractUser, SafeDeleteModel):
     - ADMINISTRATEUR  → connexion email + mot de passe + Google Authenticator (TOTP)
     - BIBLIOTHECAIRE  → connexion email + mot de passe + Google Authenticator (TOTP)
     - ETUDIANT        → connexion matricule + mot de passe + Google Authenticator (TOTP)
+    - PERSONNE_EXTERNE → connexion email + mot de passe + Google Authenticator (TOTP)
  
     Tous les comptes supportent le 2FA (TOTP via Google Authenticator).
     """
@@ -74,6 +75,7 @@ class User(AbstractUser, SafeDeleteModel):
  
     class UserType(models.TextChoices):
         ETUDIANT        = 'ETUDIANT',        'Étudiant'
+        PERSONNE_EXTERNE = 'PERSONNE_EXTERNE', 'Personne externe'
         BIBLIOTHECAIRE  = 'BIBLIOTHECAIRE',  'Bibliothécaire'
         ADMINISTRATEUR  = 'ADMINISTRATEUR',  'Administrateur'
  
@@ -106,7 +108,7 @@ class User(AbstractUser, SafeDeleteModel):
     is_2fa_enabled   = models.BooleanField(
         default=False,
         verbose_name="2FA activé",
-        help_text="Obligatoire pour tous les types de comptes."
+        help_text="Obligatoire pour les etudiants, bibliothecaires et administrateurs."
     )
     totp_verified_at = models.DateTimeField(
         null=True, blank=True,
@@ -154,12 +156,17 @@ class User(AbstractUser, SafeDeleteModel):
     @property
     def is_admin(self):
         return self.user_type == self.UserType.ADMINISTRATEUR
+
+    @property
+    def is_personne_externe(self):
+        return self.user_type == self.UserType.PERSONNE_EXTERNE
  
     @property
     def requires_2fa(self):
-        """Tous les comptes doivent obligatoirement utiliser le 2FA."""
+        """Retourne True pour les roles ou le 2FA est obligatoire."""
         return self.user_type in (
             self.UserType.ETUDIANT,
+            self.UserType.PERSONNE_EXTERNE,
             self.UserType.ADMINISTRATEUR,
             self.UserType.BIBLIOTHECAIRE
         )

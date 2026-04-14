@@ -1,4 +1,5 @@
 import pyotp
+from django.utils import timezone
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -6,13 +7,15 @@ from rest_framework.test import APITestCase
 from apps.filiere.models import Filiere
 from apps.niveau.models import Niveau
 from apps.specialites.models import Specialite
-from apps.users.models import Etudiant, User
+from apps.users.models import Bibliothecaire, Etudiant, User
 
 
 class FirstLoginTotpApiTests(APITestCase):
     def setUp(self):
         super().setUp()
         self.etudiant_login_url = reverse('etudiant-login')
+        self.bibliothecaire_login_url = reverse('bibliothecaire-login')
+        self.bibliothecaire_totp_verify_url = reverse('bibliothecaire-totp-verify')
         self.admin_login_url = reverse('admin-login')
         self.totp_confirm_url = reverse('totp-confirm')
         self.filiere = Filiere.objects.create(name='Droit')
@@ -45,6 +48,26 @@ class FirstLoginTotpApiTests(APITestCase):
             annee_inscription=2026,
         )
         return user, etudiant
+
+    def _create_bibliothecaire_with_pending_totp(self):
+        user = User.objects.create_user(
+            email='biblio.pending@example.com',
+            password='Password123!',
+            first_name='Mariam',
+            last_name='Kone',
+            phone='+2250700000003',
+            user_type=User.UserType.BIBLIOTHECAIRE,
+        )
+        user.totp_secret = pyotp.random_base32()
+        user.save(update_fields=['totp_secret', 'updated_at'])
+
+        bibliothecaire = Bibliothecaire.objects.create(
+            user=user,
+            badge_number='BIB-001',
+            peut_gerer_documents=True,
+            peut_gerer_utilisateurs=True,
+        )
+        return user, bibliothecaire
 
     def test_student_login_returns_qr_setup_when_totp_not_enabled(self):
         user, etudiant = self._create_student_with_pending_totp()
@@ -122,3 +145,60 @@ class FirstLoginTotpApiTests(APITestCase):
             response.data['data']['totp_setup']['totp_secret'],
             admin.totp_secret,
         )
+
+    def test_bibliothecaire_verify_totp_activates_2fa_and_stops_returning_qr(self):
+        user, bibliothecaire = self._create_bibliothecaire_with_pending_totp()
+
+        first_login_response = self.client.post(
+            self.bibliothecaire_login_url,
+            {'email': user.email, 'password': 'Password123!'},
+            format='json',
+        )
+
+        self.assertEqual(first_login_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(first_login_response.data['data']['requires_totp_setup'])
+        self.assertIn('totp_setup', first_login_response.data['data'])
+
+        verify_response = self.client.post(
+            self.bibliothecaire_totp_verify_url,
+            {'user_id': str(user.id), 'totp_code': pyotp.TOTP(user.totp_secret).now()},
+            format='json',
+        )
+
+        self.assertEqual(verify_response.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertTrue(user.is_2fa_enabled)
+        self.assertIsNotNone(user.totp_verified_at)
+        self.assertEqual(
+            verify_response.data['data']['permissions']['badge_number'],
+            bibliothecaire.badge_number,
+        )
+
+        second_login_response = self.client.post(
+            self.bibliothecaire_login_url,
+            {'email': user.email, 'password': 'Password123!'},
+            format='json',
+        )
+
+        self.assertEqual(second_login_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(second_login_response.data['data']['requires_totp'])
+        self.assertFalse(second_login_response.data['data'].get('requires_totp_setup', False))
+        self.assertNotIn('totp_setup', second_login_response.data['data'])
+
+    def test_bibliothecaire_login_repairs_verified_totp_state_without_qr(self):
+        user, _ = self._create_bibliothecaire_with_pending_totp()
+        user.totp_verified_at = timezone.now()
+        user.save(update_fields=['totp_verified_at', 'updated_at'])
+
+        response = self.client.post(
+            self.bibliothecaire_login_url,
+            {'email': user.email, 'password': 'Password123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        user.refresh_from_db()
+        self.assertTrue(user.is_2fa_enabled)
+        self.assertTrue(response.data['data']['requires_totp'])
+        self.assertFalse(response.data['data'].get('requires_totp_setup', False))
+        self.assertNotIn('totp_setup', response.data['data'])

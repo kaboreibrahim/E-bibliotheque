@@ -198,5 +198,14 @@ class UserService:
                 'peut_gerer_utilisateurs': bib.peut_gerer_utilisateurs,
                 'date_prise_poste':        str(bib.date_prise_poste) if bib.date_prise_poste else None,
             }
+        elif user.user_type == 'PERSONNE_EXTERNE' and hasattr(user, 'profil_personne_externe'):
+            personne = user.profil_personne_externe
+            data['profil'] = {
+                'personne_externe_id': str(personne.id),
+                'numero_piece': personne.numero_piece,
+                'profession': personne.profession,
+                'lieu_habitation': personne.lieu_habitation,
+                'created_at': personne.created_at.isoformat(),
+            }
 
         return ServiceResult(success=True, message="Profil récupéré.", data=data)

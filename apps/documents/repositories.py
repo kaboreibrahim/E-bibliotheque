@@ -9,6 +9,17 @@ from apps.documents.models import Document
 class DocumentRepository:
 
     @staticmethod
+    def _apply_allowed_level_names(
+        queryset: QuerySet,
+        allowed_level_names: list[str] | None = None,
+    ) -> QuerySet:
+        if allowed_level_names is None:
+            return queryset
+        if not allowed_level_names:
+            return queryset.none()
+        return queryset.filter(niveau__name__in=allowed_level_names)
+
+    @staticmethod
     def get_all() -> QuerySet:
         return (
             Document.objects
@@ -21,8 +32,16 @@ class DocumentRepository:
         )
 
     @staticmethod
-    def get_by_id(document_id: str) -> Document | None:
-        return DocumentRepository.get_all().filter(pk=document_id).first()
+    def get_by_id(
+        document_id: str,
+        *,
+        allowed_level_names: list[str] | None = None,
+    ) -> Document | None:
+        queryset = DocumentRepository._apply_allowed_level_names(
+            DocumentRepository.get_all(),
+            allowed_level_names,
+        )
+        return queryset.filter(pk=document_id).first()
 
     @staticmethod
     def get_filtered(
@@ -35,8 +54,12 @@ class DocumentRepository:
         ajoute_par_id: str | None = None,
         annee_academique_debut: str | None = None,
         search: str = "",
+        allowed_level_names: list[str] | None = None,
     ) -> QuerySet:
-        queryset = DocumentRepository.get_all()
+        queryset = DocumentRepository._apply_allowed_level_names(
+            DocumentRepository.get_all(),
+            allowed_level_names,
+        )
 
         if type_document:
             queryset = queryset.filter(type=type_document)

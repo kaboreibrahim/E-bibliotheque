@@ -105,7 +105,10 @@ DOCUMENT_LIST_EXAMPLE = OpenApiExample(
             "type": "COURS",
             "type_display": "Cours",
             "description": "Support du semestre 1",
-            "file_url": "http://localhost:8000/media/documents/COURS/procedure-civile.pdf",
+            "file_name": "procedure-civile.pdf",
+            "file_mime_type": "application/pdf",
+            "file_base64": None,
+            "file_data_uri": None,
             "filiere": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
             "filiere_detail": {
                 "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -147,12 +150,14 @@ DOCUMENT_LIST_EXAMPLE = OpenApiExample(
 )
 
 DOCUMENT_CREATE_REQUEST_EXAMPLE = OpenApiExample(
-    "Payload creation document",
+    "Payload creation document en Base64",
     request_only=True,
     value={
         "title": "Sujet d examen droit civil",
         "type": "EXAMEN",
-        "file_path": "(binary)",
+        "file_base64": "data:application/pdf;base64,ZXhhbQ==",
+        "file_name": "examen-droit-civil.pdf",
+        "file_mime_type": "application/pdf",
         "description": "Session normale 2025",
         "filiere": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
         "niveau": "cccccccc-cccc-cccc-cccc-cccccccccccc",
@@ -174,7 +179,10 @@ DOCUMENT_RESPONSE_EXAMPLE = OpenApiExample(
         "type": "EXAMEN",
         "type_display": "Examen",
         "description": "Session normale 2025",
-        "file_url": "http://localhost:8000/media/documents/EXAMEN/examen-droit-civil.pdf",
+        "file_name": "examen-droit-civil.pdf",
+        "file_mime_type": "application/pdf",
+        "file_base64": "ZXhhbQ==",
+        "file_data_uri": "data:application/pdf;base64,ZXhhbQ==",
         "filiere": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
         "filiere_detail": {
             "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -265,7 +273,8 @@ def _get_user_agent(request) -> str:
         tags=["Documents"],
         request=DocumentCreateSerializer,
         description=(
-            "Creation d'un document via multipart/form-data avec televersement du fichier. "
+            "Creation d'un document via `multipart/form-data` avec `file_path` ou via "
+            "`application/json` avec `file_base64`. Le contenu est stocke en Base64 en base. "
             "Reserve aux administrateurs et aux bibliothecaires ayant "
             "`peut_gerer_documents = true`."
         ),
@@ -327,6 +336,7 @@ class DocumentViewSet(viewsets.ViewSet):
     def list(self, request):
         try:
             documents = _service.list_documents(
+                user=request.user,
                 type_document=request.query_params.get("type"),
                 filiere_id=request.query_params.get("filiere"),
                 niveau_id=request.query_params.get("niveau"),
@@ -347,7 +357,7 @@ class DocumentViewSet(viewsets.ViewSet):
         serializer = DocumentSerializer(
             documents,
             many=True,
-            context={"request": request},
+            context={"request": request, "include_file_content": False},
         )
         return Response(serializer.data)
 
@@ -366,19 +376,25 @@ class DocumentViewSet(viewsets.ViewSet):
             detail = getattr(exc, "message_dict", None) or {"detail": exc.messages}
             return Response(detail, status=status.HTTP_400_BAD_REQUEST)
 
-        read_serializer = DocumentSerializer(document, context={"request": request})
+        read_serializer = DocumentSerializer(
+            document,
+            context={"request": request, "include_file_content": True},
+        )
         return Response(read_serializer.data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, pk=None):
         try:
-            document = _service.get_document(pk)
+            document = _service.get_document(pk, user=request.user)
         except ValidationError as exc:
             return Response(
                 {"detail": exc.message},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        serializer = DocumentSerializer(document, context={"request": request})
+        serializer = DocumentSerializer(
+            document,
+            context={"request": request, "include_file_content": True},
+        )
         return Response(serializer.data)
 
     @extend_schema(
@@ -406,6 +422,7 @@ class DocumentViewSet(viewsets.ViewSet):
         try:
             document, consultation = _service.ouvrir_document(
                 document_id=pk,
+                user=request.user,
                 user_id=str(request.user.pk) if request.user.is_authenticated else None,
                 ip_address=_get_client_ip(request),
                 user_agent=_get_user_agent(request),
@@ -418,7 +435,10 @@ class DocumentViewSet(viewsets.ViewSet):
             )
             return Response({"detail": exc.message}, status=status_code)
 
-        serializer = DocumentSerializer(document, context={"request": request})
+        serializer = DocumentSerializer(
+            document,
+            context={"request": request, "include_file_content": True},
+        )
         return Response(
             {
                 "consultation_id": str(consultation.pk),

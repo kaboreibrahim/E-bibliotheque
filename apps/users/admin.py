@@ -441,7 +441,7 @@ class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
 
     fieldsets = (
         (_("📋 Informations générales"), {
-            'fields': ('title', 'type', 'annee_academique_debut', 'description', 'file_path')
+            'fields': ('title', 'type', 'annee_academique_debut', 'description', 'file_name', 'file_mime_type', 'file_base64')
         }),
         (_("🏫 Classification"), {
             'fields': ('filiere', 'niveau', 'specialite', 'ue')

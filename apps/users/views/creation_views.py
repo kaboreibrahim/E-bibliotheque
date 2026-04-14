@@ -10,6 +10,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import JSONParser, MultiPartParser
+from django.http import HttpResponse
+from django.utils import timezone
 
 from drf_spectacular.utils import (
     extend_schema, OpenApiExample, OpenApiParameter, OpenApiResponse,
@@ -22,22 +24,30 @@ from apps.users.serializers.creation_serializers import (
     EtudiantUpdateSerializer,
     EtudiantActiverSerializer,
     EtudiantDetailSerializer,
+    PersonneExterneCreateSerializer,
+    PersonneExterneUpdateSerializer,
+    PersonneExterneDetailSerializer,
     BibliothecaireCreateSerializer,
     BibliothecaireUpdateSerializer,
     BibliothecaireDetailSerializer,
 )
 from apps.users.services.creation_service import (
     EtudiantCreationService,
+    PersonneExterneCreationService,
     BibliothecaireCreationService,
 )
+from apps.users.services.etudiant_export_service import EtudiantExcelExportService
 from apps.users.repositories.etudiant_repository import (
     EtudiantRepository,
     BibliothecaireRepository,
 )
+from apps.users.repositories.personne_repository import PersonneExterneRepository
 from apps.users.permissions import (
     IsAdministrateur,
     IsAdminOrBibliothecaire,
 )
+from apps.history.models import HistoriqueActionService as HAS
+from django.db.models import Q
 
 
 ETUDIANT_ID_PARAMETER = OpenApiParameter(
@@ -84,6 +94,52 @@ BIBLIOTHECAIRE_DETAIL_RESPONSE = inline_serializer(
     },
 )
 
+PERSONNE_EXTERNE_DETAIL_RESPONSE = inline_serializer(
+    'PersonneExterneDetailEnvelope',
+    fields={
+        'success': s.BooleanField(),
+        'data': PersonneExterneDetailSerializer(),
+    },
+)
+
+ETUDIANT_LIST_PARAMETERS = [
+    OpenApiParameter(
+        name='filiere',
+        type=OpenApiTypes.STR,
+        location=OpenApiParameter.QUERY,
+        required=False,
+        description="Filtrer par nom de filiere.",
+    ),
+    OpenApiParameter(
+        name='niveau',
+        type=OpenApiTypes.STR,
+        location=OpenApiParameter.QUERY,
+        required=False,
+        description="Filtrer par code niveau. Ex: L1, L2, M1, M2.",
+    ),
+    OpenApiParameter(
+        name='specialite',
+        type=OpenApiTypes.STR,
+        location=OpenApiParameter.QUERY,
+        required=False,
+        description="Filtrer par nom de specialite.",
+    ),
+    OpenApiParameter(
+        name='expire',
+        type=OpenApiTypes.BOOL,
+        location=OpenApiParameter.QUERY,
+        required=False,
+        description="`true` pour exporter uniquement les comptes expires.",
+    ),
+    OpenApiParameter(
+        name='search',
+        type=OpenApiTypes.STR,
+        location=OpenApiParameter.QUERY,
+        required=False,
+        description="Recherche sur prenom, nom, email ou matricule.",
+    ),
+]
+
 
 def _resp(result):
     return Response(
@@ -91,6 +147,44 @@ def _resp(result):
          'data': result.data or {}, 'errors': result.errors or {}},
         status=result.http_status
     )
+
+
+def _build_etudiant_queryset(request):
+    filters = {}
+    if request.query_params.get('filiere'):
+        filters['filiere__name__icontains'] = request.query_params['filiere']
+    if request.query_params.get('niveau'):
+        filters['niveau__name'] = request.query_params['niveau'].upper()
+    if request.query_params.get('specialite'):
+        filters['specialite__name__icontains'] = request.query_params['specialite']
+    if request.query_params.get('expire') == 'true':
+        filters['compte_expire_le__lt'] = timezone.now()
+
+    queryset = EtudiantRepository.get_all(filters)
+    search = request.query_params.get('search', '').strip()
+    if search:
+        queryset = queryset.filter(
+            Q(user__first_name__icontains=search)
+            | Q(user__last_name__icontains=search)
+            | Q(user__email__icontains=search)
+            | Q(matricule__icontains=search)
+        )
+    return queryset
+
+
+def _build_personne_externe_queryset(request):
+    queryset = PersonneExterneRepository.get_all()
+    search = request.query_params.get('search', '').strip()
+    if search:
+        queryset = queryset.filter(
+            Q(user__first_name__icontains=search)
+            | Q(user__last_name__icontains=search)
+            | Q(user__email__icontains=search)
+            | Q(numero_piece__icontains=search)
+            | Q(profession__icontains=search)
+            | Q(lieu_habitation__icontains=search)
+        )
+    return queryset
 
 
 # =============================================================================
@@ -320,30 +414,11 @@ class EtudiantListView(APIView):
         tags=['Étudiants'],
         summary='Lister les étudiants',
         description="Retourne la liste paginée des étudiants avec filtres.",
+        parameters=ETUDIANT_LIST_PARAMETERS,
         responses={200: OpenApiResponse(description="Liste des étudiants")},
     )
     def get(self, request):
-        filters = {}
-        if request.query_params.get('filiere'):
-            filters['filiere__name__icontains'] = request.query_params['filiere']
-        if request.query_params.get('niveau'):
-            filters['niveau__name'] = request.query_params['niveau'].upper()
-        if request.query_params.get('specialite'):
-            filters['specialite__name__icontains'] = request.query_params['specialite']
-        if request.query_params.get('expire') == 'true':
-            from django.utils import timezone
-            filters['compte_expire_le__lt'] = timezone.now()
-
-        qs        = EtudiantRepository.get_all(filters)
-        search    = request.query_params.get('search', '')
-        if search:
-            from django.db.models import Q
-            qs = qs.filter(
-                Q(user__first_name__icontains=search) |
-                Q(user__last_name__icontains=search)  |
-                Q(user__email__icontains=search)       |
-                Q(matricule__icontains=search)
-            )
+        qs = _build_etudiant_queryset(request)
 
         page      = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 20))
@@ -356,6 +431,254 @@ class EtudiantListView(APIView):
             'pages': (total + page_size - 1) // page_size,
             'results': serializer.data
         })
+
+
+class EtudiantExportExcelView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminOrBibliothecaire]
+
+    @extend_schema(
+        tags=['Étudiants'],
+        summary='Exporter les étudiants en Excel',
+        description=(
+            "Télécharge un fichier `.xlsx` contenant la liste des étudiants et des "
+            "personnes externes avec leurs informations personnelles, académiques "
+            "quand elles existent, et le type de profil."
+        ),
+        parameters=ETUDIANT_LIST_PARAMETERS,
+        responses={
+            200: OpenApiResponse(
+                response=OpenApiTypes.BINARY,
+                description="Fichier Excel des étudiants.",
+            ),
+            403: OpenApiResponse(description="Accès réservé aux administrateurs et bibliothécaires."),
+        },
+    )
+    def get(self, request):
+        etudiants = _build_etudiant_queryset(request)
+        academic_filters = any(
+            request.query_params.get(param)
+            for param in ('filiere', 'niveau', 'specialite', 'expire')
+        )
+        personnes_externes = (
+            PersonneExterneRepository.get_all().none()
+            if academic_filters
+            else _build_personne_externe_queryset(request)
+        )
+        workbook = EtudiantExcelExportService.export(etudiants, personnes_externes)
+        filename = f'profils_{timezone.localdate().isoformat()}.xlsx'
+
+        response = HttpResponse(
+            workbook,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+class PersonneExterneCreateView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminOrBibliothecaire]
+    parser_classes = [JSONParser, MultiPartParser]
+
+    @extend_schema(
+        tags=['Personnes externes'],
+        summary='Créer une personne externe',
+        description=(
+            "Crée un compte de personne externe. Aucun niveau ni aucune spécialité "
+            "ne sont requis et le compte peut consulter tous les documents."
+        ),
+        request=PersonneExterneCreateSerializer,
+        responses={
+            201: OpenApiResponse(description="Personne externe créée avec succès."),
+            400: OpenApiResponse(description="Données invalides."),
+            403: OpenApiResponse(description="Permission insuffisante."),
+        },
+    )
+    def post(self, request):
+        if request.user.user_type == 'BIBLIOTHECAIRE':
+            try:
+                bib = request.user.profil_bibliothecaire
+                if not bib.peut_gerer_utilisateurs:
+                    return Response({
+                        'success': False,
+                        'message': "Vous n'avez pas la permission de créer des utilisateurs.",
+                        'data': {},
+                        'errors': {},
+                    }, status=403)
+            except Exception:
+                return Response({
+                    'success': False,
+                    'message': "Profil bibliothécaire introuvable.",
+                    'data': {},
+                    'errors': {},
+                }, status=403)
+
+        serializer = PersonneExterneCreateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'message': 'Données invalides.',
+                'data': {},
+                'errors': serializer.errors,
+            }, status=400)
+
+        result = PersonneExterneCreationService.creer_personne_externe(
+            data=serializer.validated_data,
+            effectue_par=request.user,
+        )
+        return _resp(result)
+
+
+class PersonneExterneListView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminOrBibliothecaire]
+
+    @extend_schema(
+        tags=['Personnes externes'],
+        summary='Lister les personnes externes',
+        description="Retourne la liste paginée des personnes externes.",
+        responses={200: OpenApiResponse(description="Liste des personnes externes.")},
+    )
+    def get(self, request):
+        queryset = _build_personne_externe_queryset(request)
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        total = queryset.count()
+        start = (page - 1) * page_size
+
+        serializer = PersonneExterneDetailSerializer(
+            queryset[start:start + page_size],
+            many=True,
+        )
+        return Response({
+            'success': True,
+            'count': total,
+            'page': page,
+            'pages': (total + page_size - 1) // page_size,
+            'results': serializer.data,
+        })
+
+
+class PersonneExterneDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminOrBibliothecaire]
+    parser_classes = [JSONParser]
+
+    def _get_or_404(self, personne_id):
+        personne = PersonneExterneRepository.get_by_id(personne_id)
+        if not personne:
+            return None, Response({
+                'success': False,
+                'message': "Personne externe introuvable.",
+                'data': {},
+                'errors': {},
+            }, status=404)
+        return personne, None
+
+    @extend_schema(
+        tags=['Personnes externes'],
+        summary="Détail d'une personne externe",
+        responses={
+            200: OpenApiResponse(
+                description="Détail de la personne externe.",
+                response=PERSONNE_EXTERNE_DETAIL_RESPONSE,
+            ),
+            404: OpenApiResponse(description="Personne externe introuvable."),
+        },
+    )
+    def get(self, request, personne_id):
+        personne, err = self._get_or_404(personne_id)
+        if err:
+            return err
+        return Response({
+            'success': True,
+            'data': PersonneExterneDetailSerializer(personne).data,
+        })
+
+    @extend_schema(
+        tags=['Personnes externes'],
+        summary="Modifier une personne externe",
+        request=PersonneExterneUpdateSerializer,
+        responses={
+            200: OpenApiResponse(
+                description="Profil mis à jour.",
+                response=PERSONNE_EXTERNE_DETAIL_RESPONSE,
+            ),
+            400: OpenApiResponse(description="Données invalides."),
+            404: OpenApiResponse(description="Personne externe introuvable."),
+        },
+    )
+    def patch(self, request, personne_id):
+        personne, err = self._get_or_404(personne_id)
+        if err:
+            return err
+
+        serializer = PersonneExterneUpdateSerializer(data=request.data, partial=True)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'message': 'Données invalides.',
+                'data': {},
+                'errors': serializer.errors,
+            }, status=400)
+
+        data = serializer.validated_data
+        user_fields = {
+            field: data[field]
+            for field in ('first_name', 'last_name', 'phone', 'date_of_birth')
+            if field in data
+        }
+        profil_fields = {
+            field: data[field]
+            for field in ('numero_piece', 'profession', 'lieu_habitation')
+            if field in data
+        }
+
+        from apps.users.repositories.user_repository import UserRepository
+        if user_fields:
+            UserRepository.update(personne.user, **user_fields)
+        if profil_fields:
+            PersonneExterneRepository.update(personne, **profil_fields)
+
+        HAS.log_utilisateur(
+            'MODIF',
+            auteur=request.user,
+            cible_user=personne.user,
+            details={'champs': list(data.keys())},
+        )
+
+        return Response({
+            'success': True,
+            'message': 'Profil personne externe mis à jour.',
+            'data': PersonneExterneDetailSerializer(personne).data,
+        })
+
+    @extend_schema(
+        tags=['Personnes externes'],
+        summary='Supprimer une personne externe (soft delete)',
+        responses={
+            204: OpenApiResponse(description="Compte supprimé."),
+            403: OpenApiResponse(description="Réservé à l'administrateur."),
+            404: OpenApiResponse(description="Personne externe introuvable."),
+        },
+    )
+    def delete(self, request, personne_id):
+        personne, err = self._get_or_404(personne_id)
+        if err:
+            return err
+        if request.user.user_type != 'ADMINISTRATEUR':
+            return Response({
+                'success': False,
+                'message': "Seul l'administrateur peut supprimer un compte.",
+                'data': {},
+                'errors': {},
+            }, status=403)
+
+        HAS.log_utilisateur('SUPPRIME', auteur=request.user, cible_user=personne.user)
+        PersonneExterneRepository.soft_delete(personne)
+        return Response({
+            'success': True,
+            'message': "Compte personne externe supprimé.",
+            'data': {},
+            'errors': {},
+        }, status=204)
 
 
 class EtudiantDetailView(APIView):
@@ -585,9 +908,12 @@ class BibliothecaireCreateView(APIView):
 
 ```
 1. POST /api/bibliothecaires/         ← admin crée le compte
-2. Transmettre QR code au bibliothécaire
-3. Biblio scanne : POST /api/auth/totp/confirm/   ← active le 2FA
-4. Biblio se connecte : POST /api/auth/bibliothecaire/login/
+2. Option A : transmettre tout de suite le QR code retourne dans cette reponse
+3. Option B : laisser le bibliothecaire se connecter une premiere fois ;
+   `/api/auth/bibliothecaire/login/` retournera alors `requires_totp_setup`
+   avec `setup_token` + `totp_setup`
+4. POST /api/auth/totp/confirm/       ← active le 2FA
+5. POST /api/auth/bibliothecaire/login/ puis /totp/verify/ pour les connexions suivantes
 ```
 
 ## Permissions disponibles

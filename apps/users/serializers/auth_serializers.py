@@ -1,10 +1,11 @@
 """
 =============================================================================
  apps/users/serializers/auth_serializers.py
- Serializers d'authentification — 3 flux séparés :
-   1. Étudiant       → matricule + password + TOTP
-   2. Bibliothécaire → email    + password + TOTP
-   3. Admin          → email    + password + TOTP
+ Serializers d'authentification — 4 flux séparés :
+   1. Étudiant         → matricule + password + TOTP
+   2. Personne externe → email    + password + TOTP
+   3. Bibliothécaire   → email    + password + TOTP
+   4. Admin            → email    + password + TOTP
 =============================================================================
 """
 
@@ -92,6 +93,51 @@ class BibliothecaireLoginSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         return value.lower().strip()
+
+
+class PersonneExterneLoginSerializer(serializers.Serializer):
+    """
+    Connexion personne externe.
+    Donnees attendues :
+      {
+        "email": "externe@example.com",
+        "password": "monMotDePasse"
+      }
+    """
+    email = serializers.EmailField(
+        help_text="Adresse email de la personne externe."
+    )
+    password = serializers.CharField(
+        write_only=True,
+        style={'input_type': 'password'},
+        help_text="Mot de passe du compte personne externe."
+    )
+
+    def validate_email(self, value):
+        return value.lower().strip()
+
+
+class PersonneExterneTOTPVerifySerializer(serializers.Serializer):
+    """
+    Étape 2 connexion personne externe — validation Google Authenticator.
+    Données attendues :
+      {
+        "user_id":   "uuid-de-la-personne-externe",
+        "totp_code": "123456"
+      }
+    """
+    user_id = serializers.UUIDField(
+        help_text="UUID retourné à l'étape 1."
+    )
+    totp_code = serializers.CharField(
+        max_length=6, min_length=6,
+        help_text="Code à 6 chiffres Google Authenticator."
+    )
+
+    def validate_totp_code(self, value):
+        if not value.isdigit():
+            raise serializers.ValidationError("Le code TOTP doit contenir uniquement des chiffres.")
+        return value
 
 
 class BibliothecaireTOTPVerifySerializer(serializers.Serializer):

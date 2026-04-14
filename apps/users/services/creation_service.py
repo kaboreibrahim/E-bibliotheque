@@ -15,6 +15,7 @@ from apps.users.repositories.etudiant_repository import (
     EtudiantRepository,
     BibliothecaireRepository,
 )
+from apps.users.repositories.personne_repository import PersonneExterneRepository
 from apps.history.models import HistoriqueActionService as HAS
 
 logger = logging.getLogger(__name__)
@@ -420,6 +421,81 @@ class BibliothecaireCreationService:
                         "avant de pouvoir se connecter."
                     )
                 }
+            },
+            http_status=201
+        )
+
+
+class PersonneExterneCreationService:
+    """
+    Logique metier pour la creation d'un compte personne externe.
+    """
+
+    @staticmethod
+    def creer_personne_externe(data: dict, effectue_par: User) -> ServiceResult:
+        if UserRepository.exists_by_email(data['email']):
+            return ServiceResult(
+                success=False,
+                message="Un compte avec cet email existe deja.",
+                errors={'email': ['Email deja utilise par un autre compte.']},
+                http_status=400
+            )
+
+        if UserRepository.exists_by_phone(data['phone']):
+            return ServiceResult(
+                success=False,
+                message="Un compte avec ce numero de telephone existe deja.",
+                errors={'phone': ['Telephone deja utilise par un autre compte.']},
+                http_status=400
+            )
+
+        user = UserRepository.create(
+            email=data['email'],
+            password=data['password'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            phone=data['phone'],
+            user_type='PERSONNE_EXTERNE',
+            date_of_birth=data.get('date_of_birth'),
+            is_active=True,
+        )
+
+        personne = PersonneExterneRepository.create(user=user)
+        PersonneExterneRepository.update(
+            personne,
+            numero_piece=data.get('numero_piece', ''),
+            profession=data.get('profession', ''),
+            lieu_habitation=data.get('lieu_habitation', ''),
+        )
+        personne.refresh_from_db()
+
+        HAS.log_utilisateur(
+            'CREATION',
+            auteur=effectue_par,
+            cible_user=user,
+            details={
+                'profil_type': 'PERSONNE_EXTERNE',
+                'numero_piece': personne.numero_piece,
+                'profession': personne.profession,
+                'lieu_habitation': personne.lieu_habitation,
+            }
+        )
+
+        return ServiceResult(
+            success=True,
+            message=(
+                f"Compte personne externe cree avec succes pour {user.get_full_name()}. "
+                "Le compte est actif immediatement."
+            ),
+            data={
+                'personne_externe_id': str(personne.id),
+                'user_id': str(user.id),
+                'email': user.email,
+                'nom_complet': user.get_full_name(),
+                'user_type': user.user_type,
+                'numero_piece': personne.numero_piece,
+                'profession': personne.profession,
+                'lieu_habitation': personne.lieu_habitation,
             },
             http_status=201
         )
