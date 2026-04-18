@@ -79,7 +79,9 @@ class EtudiantRepository:
 
     @staticmethod
     def create(user: User, filiere, niveau, specialite=None,
-               annee_inscription: int = None) -> Etudiant:
+               annee_inscription: int = None,
+               date_debut_validite=None,
+               date_fin_validite=None) -> Etudiant:
         from django.utils import timezone
         return Etudiant.objects.create(
             user=user,
@@ -87,6 +89,8 @@ class EtudiantRepository:
             niveau=niveau,
             specialite=specialite,
             annee_inscription=annee_inscription or timezone.now().year,
+            date_debut_validite=date_debut_validite,
+            date_fin_validite=date_fin_validite,
         )
 
     @staticmethod

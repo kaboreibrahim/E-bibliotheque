@@ -1,4 +1,6 @@
 import pyotp
+from datetime import timedelta
+from django.utils import timezone
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -62,6 +64,39 @@ class PersonneExterneApiTests(APITestCase):
         self.assertEqual(personne.profession, 'Juriste')
         self.assertEqual(personne.lieu_habitation, 'Yopougon')
 
+    def test_admin_can_create_personne_externe_with_validity_window(self):
+        self.client.force_authenticate(user=self.admin)
+        debut = timezone.localdate() + timedelta(days=1)
+        fin = debut + timedelta(days=14)
+
+        response = self.client.post(
+            self.create_url,
+            {
+                'first_name': 'Awa',
+                'last_name': 'Fenetre',
+                'email': 'awa.fenetre@example.com',
+                'phone': '+2250700000207',
+                'password': 'Externe@2025!',
+                'confirm_password': 'Externe@2025!',
+                'numero_piece': 'CNI-445566',
+                'profession': 'Juriste',
+                'lieu_habitation': 'Yopougon',
+                'date_debut_validite': debut.isoformat(),
+                'date_fin_validite': fin.isoformat(),
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['data']['date_debut_validite'], debut.isoformat())
+        self.assertEqual(response.data['data']['date_fin_validite'], fin.isoformat())
+        personne = PersonneExterne.objects.select_related('user').get(
+            user__email='awa.fenetre@example.com'
+        )
+        self.assertFalse(personne.user.is_active)
+        self.assertEqual(personne.date_debut_validite, debut)
+        self.assertEqual(personne.date_fin_validite, fin)
+
     def _create_personne_externe_user(self, email, phone):
         user = User.objects.create_user(
             email=email,
@@ -76,6 +111,26 @@ class PersonneExterneApiTests(APITestCase):
             numero_piece='PP-556677',
             profession='Consultant',
             lieu_habitation='Cocody',
+        )
+        return user, personne
+
+    def _create_personne_externe_with_window(self, email, phone, debut, fin):
+        user = User.objects.create_user(
+            email=email,
+            password='Externe@2025!',
+            first_name='Externe',
+            last_name='Fenetre',
+            phone=phone,
+            user_type=User.UserType.PERSONNE_EXTERNE,
+        )
+        personne = PersonneExterne.objects.create(
+            user=user,
+            numero_piece='PP-998877',
+            profession='Consultant',
+            lieu_habitation='Cocody',
+            date_debut_validite=debut,
+            date_fin_validite=fin,
+            compte_active_le=timezone.now() - timedelta(days=2),
         )
         return user, personne
 
@@ -169,6 +224,52 @@ class PersonneExterneApiTests(APITestCase):
         )
         self.assertEqual(response.data['data']['profil']['numero_piece'], 'PP-556677')
 
+    def test_personne_externe_login_reports_future_start_date(self):
+        debut = timezone.localdate() + timedelta(days=2)
+        fin = debut + timedelta(days=5)
+        user, personne = self._create_personne_externe_with_window(
+            email='externe.future@example.com',
+            phone='+2250700000208',
+            debut=debut,
+            fin=fin,
+        )
+        user.totp_secret = pyotp.random_base32()
+        user.save(update_fields=['totp_secret', 'updated_at'])
+
+        response = self.client.post(
+            self.login_url,
+            {'email': user.email, 'password': 'Externe@2025!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('sera actif a partir du', response.data['message'])
+        personne.refresh_from_db()
+        self.assertFalse(personne.user.is_active)
+
+    def test_personne_externe_login_reports_expired_validity_window(self):
+        fin = timezone.localdate() - timedelta(days=1)
+        debut = fin - timedelta(days=5)
+        user, personne = self._create_personne_externe_with_window(
+            email='externe.expired@example.com',
+            phone='+2250700000209',
+            debut=debut,
+            fin=fin,
+        )
+        user.totp_secret = pyotp.random_base32()
+        user.save(update_fields=['totp_secret', 'updated_at'])
+
+        response = self.client.post(
+            self.login_url,
+            {'email': user.email, 'password': 'Externe@2025!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('expire', response.data['message'].lower())
+        personne.refresh_from_db()
+        self.assertFalse(personne.user.is_active)
+
     def test_personne_externe_profile_is_returned(self):
         user = User.objects.create_user(
             email='externe.profile@example.com',
@@ -195,3 +296,4 @@ class PersonneExterneApiTests(APITestCase):
             str(personne.id),
         )
         self.assertEqual(response.data['data']['profil']['profession'], 'Enseignant')
+        self.assertIn('statut_compte', response.data['data']['profil'])

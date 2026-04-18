@@ -1,4 +1,5 @@
 import pyotp
+from datetime import timedelta
 from django.utils import timezone
 from django.urls import reverse
 from rest_framework import status
@@ -202,3 +203,73 @@ class FirstLoginTotpApiTests(APITestCase):
         self.assertTrue(response.data['data']['requires_totp'])
         self.assertFalse(response.data['data'].get('requires_totp_setup', False))
         self.assertNotIn('totp_setup', response.data['data'])
+
+    def test_student_login_reports_future_start_date(self):
+        user = User.objects.create_user(
+            email='etu.future@example.com',
+            password='Password123!',
+            first_name='Nadia',
+            last_name='Future',
+            phone='+2250700000011',
+            user_type=User.UserType.ETUDIANT,
+        )
+        user.totp_secret = pyotp.random_base32()
+        user.save(update_fields=['totp_secret', 'updated_at'])
+
+        debut = timezone.localdate() + timedelta(days=2)
+        fin = debut + timedelta(days=10)
+        etudiant = Etudiant.objects.create(
+            user=user,
+            filiere=self.filiere,
+            niveau=self.niveau,
+            specialite=self.specialite,
+            annee_inscription=2026,
+            date_debut_validite=debut,
+            date_fin_validite=fin,
+            compte_active_le=timezone.now(),
+        )
+
+        response = self.client.post(
+            self.etudiant_login_url,
+            {'matricule': etudiant.matricule, 'password': 'Password123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('sera actif a partir du', response.data['message'])
+
+    def test_student_login_reports_expired_validity_window(self):
+        user = User.objects.create_user(
+            email='etu.expired@example.com',
+            password='Password123!',
+            first_name='Nadia',
+            last_name='Expired',
+            phone='+2250700000012',
+            user_type=User.UserType.ETUDIANT,
+        )
+        user.totp_secret = pyotp.random_base32()
+        user.save(update_fields=['totp_secret', 'updated_at'])
+
+        fin = timezone.localdate() - timedelta(days=1)
+        debut = fin - timedelta(days=7)
+        etudiant = Etudiant.objects.create(
+            user=user,
+            filiere=self.filiere,
+            niveau=self.niveau,
+            specialite=self.specialite,
+            annee_inscription=2026,
+            date_debut_validite=debut,
+            date_fin_validite=fin,
+            compte_active_le=timezone.now() - timedelta(days=10),
+        )
+
+        response = self.client.post(
+            self.etudiant_login_url,
+            {'matricule': etudiant.matricule, 'password': 'Password123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn('expiré', response.data['message'])
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)

@@ -15,7 +15,7 @@ from django.db import connection
 from django.db.models import Count, IntegerField, Q, Value
 from django.utils import timezone
 
-from apps.users.models import User, Etudiant, Bibliothecaire
+from apps.users.models import User, Etudiant, Bibliothecaire, PersonneExterne
 from apps.documents.models import ECUE, Document, Filiere, Niveau, TypeDocument, UE
 from apps.consultations.models import Consultation
 from apps.specialites.models import Specialite
@@ -76,7 +76,14 @@ class EtudiantInline(admin.StackedInline):
     fk_name        = 'user'
     can_delete     = False
     verbose_name   = "Profil Étudiant"
-    fields         = ('filiere', 'niveau', 'specialite', 'annee_inscription')
+    fields         = (
+        'filiere',
+        'niveau',
+        'specialite',
+        'annee_inscription',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
     autocomplete_fields = ('filiere', 'niveau', 'specialite')
     extra          = 0
 
@@ -89,6 +96,21 @@ class BibliothacaireInline(admin.StackedInline):
     fields         = ('badge_number', 'date_prise_poste',
                       'peut_gerer_documents', 'peut_gerer_utilisateurs')
     extra          = 0
+
+
+class PersonneExterneInline(admin.StackedInline):
+    """Profil personne externe affiche directement dans la fiche utilisateur."""
+    model = PersonneExterne
+    can_delete = False
+    verbose_name = "Profil Personne Externe"
+    fields = (
+        'numero_piece',
+        'profession',
+        'lieu_habitation',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
+    extra = 0
 
 
 @admin.register(User)
@@ -109,7 +131,7 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
     list_per_page  = 25
 
     # ── Inline profils ────────────────────────────────────────────────────────
-    inlines = [EtudiantInline, BibliothacaireInline]
+    inlines = [EtudiantInline, BibliothacaireInline, PersonneExterneInline]
 
     # ── Formulaire détail ─────────────────────────────────────────────────────
     fieldsets = (
@@ -197,12 +219,52 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
 
     @admin.action(description="✅ Activer les comptes sélectionnés")
     def activer_comptes(self, request, queryset):
-        nb = queryset.update(is_active=True)
+        nb = 0
+        for user in queryset.select_related(
+            'profil_etudiant',
+            'profil_personne_externe',
+        ):
+            if hasattr(user, 'profil_etudiant'):
+                profil = user.profil_etudiant
+                if profil.compte_active_le:
+                    profil.reactiver_compte(effectue_par=request.user)
+                else:
+                    profil.activer_compte(effectue_par=request.user)
+                nb += 1
+                continue
+
+            if hasattr(user, 'profil_personne_externe'):
+                user.profil_personne_externe.activer_compte()
+                nb += 1
+                continue
+
+            if not user.is_active:
+                user.is_active = True
+                user.save(update_fields=['is_active', 'updated_at'])
+                nb += 1
         self.message_user(request, f"{nb} compte(s) activé(s).")
 
     @admin.action(description="🚫 Désactiver les comptes sélectionnés")
     def desactiver_comptes(self, request, queryset):
-        nb = queryset.exclude(id=request.user.id).update(is_active=False)
+        nb = 0
+        for user in queryset.exclude(id=request.user.id).select_related(
+            'profil_etudiant',
+            'profil_personne_externe',
+        ):
+            if hasattr(user, 'profil_etudiant'):
+                user.profil_etudiant.desactiver_compte(manuel=True)
+                nb += 1
+                continue
+
+            if hasattr(user, 'profil_personne_externe'):
+                user.profil_personne_externe.desactiver_compte(manuel=True)
+                nb += 1
+                continue
+
+            if user.is_active:
+                user.is_active = False
+                user.save(update_fields=['is_active', 'updated_at'])
+                nb += 1
         self.message_user(request, f"{nb} compte(s) désactivé(s).")
 
 
@@ -213,8 +275,25 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
 @admin.register(Etudiant)
 class EtudiantAdmin(ExportCsvMixin, admin.ModelAdmin):
 
-    list_display  = ('user_email', 'user_nom', 'matricule', 'filiere', 'niveau', 'specialite', 'annee_inscription')
-    list_filter   = ('filiere', 'niveau', 'specialite', 'annee_inscription')
+    list_display  = (
+        'user_email',
+        'user_nom',
+        'matricule',
+        'filiere',
+        'niveau',
+        'specialite',
+        'annee_inscription',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
+    list_filter   = (
+        'filiere',
+        'niveau',
+        'specialite',
+        'annee_inscription',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
     search_fields = ('user__email', 'user__first_name', 'user__last_name', 'matricule', 'specialite__name')
     autocomplete_fields = ('user', 'filiere', 'niveau', 'specialite')
     list_select_related = ('user', 'filiere', 'niveau', 'specialite')
@@ -232,6 +311,33 @@ class EtudiantAdmin(ExportCsvMixin, admin.ModelAdmin):
     @admin.display(description="Matricule")
     def matricule(self, obj):
         return obj.matricule or "—"
+
+
+@admin.register(PersonneExterne)
+class PersonneExterneAdmin(ExportCsvMixin, admin.ModelAdmin):
+
+    list_display = (
+        'user_email',
+        'user_nom',
+        'numero_piece',
+        'profession',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
+    list_filter = ('date_debut_validite', 'date_fin_validite')
+    search_fields = ('user__email', 'user__first_name', 'user__last_name', 'numero_piece', 'profession')
+    autocomplete_fields = ('user',)
+    list_select_related = ('user',)
+    ordering = ('user__last_name',)
+    list_per_page = 25
+
+    @admin.display(description="Email", ordering='user__email')
+    def user_email(self, obj):
+        return obj.user.email
+
+    @admin.display(description="Nom complet", ordering='user__last_name')
+    def user_nom(self, obj):
+        return obj.user.get_full_name()
 
 
 # =============================================================================

@@ -84,16 +84,8 @@ class EtudiantAuthService:
                 http_status=401
             )
 
-        # Vérifier que le compte est actif
-        if not user.is_active:
-            return AuthResult(
-                success=False,
-                message="Votre compte est désactivé. Contactez la bibliothèque.",
-                errors={'non_field_errors': ['Compte inactif.']},
-                http_status=403
-            )
+        etudiant.synchroniser_activation()
 
-        # Vérifier expiration du compte étudiant
         if etudiant.est_expire:
             return AuthResult(
                 success=False,
@@ -102,6 +94,29 @@ class EtudiantAuthService:
                     f"Veuillez contacter la bibliothèque pour une réactivation."
                 ),
                 errors={'compte': ['Compte expiré.']},
+                http_status=403
+            )
+
+        # Vérifier que le compte est actif
+        if not user.is_active:
+            if (
+                etudiant.date_debut_validite
+                and etudiant.compte_active_le
+                and timezone.localdate() < etudiant.date_debut_validite
+            ):
+                return AuthResult(
+                    success=False,
+                    message=(
+                        "Votre compte sera actif a partir du "
+                        f"{etudiant.date_debut_validite.strftime('%d/%m/%Y')}."
+                    ),
+                    errors={'compte': ['Compte non encore ouvert.']},
+                    http_status=403
+                )
+            return AuthResult(
+                success=False,
+                message="Votre compte est désactivé. Contactez la bibliothèque.",
+                errors={'non_field_errors': ['Compte inactif.']},
                 http_status=403
             )
 
@@ -295,7 +310,37 @@ class PersonneExterneAuthService:
                 http_status=401
             )
 
+        try:
+            personne = user.profil_personne_externe
+            personne.synchroniser_activation()
+        except Exception:
+            personne = None
+            pass
+
+        if personne and personne.est_expire:
+            return AuthResult(
+                success=False,
+                message="Votre compte a expire. Contactez l'administration.",
+                errors={'compte': ['Compte expiré.']},
+                http_status=403
+            )
+
         if not user.is_active:
+            if (
+                personne
+                and personne.date_debut_validite
+                and personne.compte_active_le
+                and timezone.localdate() < personne.date_debut_validite
+            ):
+                return AuthResult(
+                    success=False,
+                    message=(
+                        "Votre compte sera actif a partir du "
+                        f"{personne.date_debut_validite.strftime('%d/%m/%Y')}."
+                    ),
+                    errors={'compte': ['Compte non encore ouvert.']},
+                    http_status=403
+                )
             return AuthResult(
                 success=False,
                 message="Votre compte est desactive. Contactez l'administration.",
@@ -796,6 +841,14 @@ def _build_successful_auth_payload(user: User, tokens: dict) -> dict:
                 'specialite': str(etu.specialite) if etu.specialite else None,
                 'jours_restants': etu.jours_restants,
                 'statut_compte': etu.statut_compte,
+                'date_debut_validite': (
+                    etu.date_debut_validite.isoformat()
+                    if etu.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    etu.date_fin_validite.isoformat()
+                    if etu.date_fin_validite else None
+                ),
             }
         except Exception:
             pass
@@ -825,6 +878,16 @@ def _build_successful_auth_payload(user: User, tokens: dict) -> dict:
                 'numero_piece': personne.numero_piece,
                 'profession': personne.profession,
                 'lieu_habitation': personne.lieu_habitation,
+                'statut_compte': personne.statut_compte,
+                'jours_restants': personne.jours_restants,
+                'date_debut_validite': (
+                    personne.date_debut_validite.isoformat()
+                    if personne.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    personne.date_fin_validite.isoformat()
+                    if personne.date_fin_validite else None
+                ),
             }
         except Exception:
             pass

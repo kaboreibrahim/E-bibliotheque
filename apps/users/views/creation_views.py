@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import JSONParser, MultiPartParser
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -627,15 +628,40 @@ class PersonneExterneDetailView(APIView):
         }
         profil_fields = {
             field: data[field]
-            for field in ('numero_piece', 'profession', 'lieu_habitation')
+            for field in (
+                'numero_piece',
+                'profession',
+                'lieu_habitation',
+                'date_debut_validite',
+                'date_fin_validite',
+            )
             if field in data
         }
+
+        if (
+            ('date_debut_validite' in data or 'date_fin_validite' in data)
+            and personne.compte_active_le is None
+            and (
+                data.get('date_debut_validite', personne.date_debut_validite)
+                and data.get('date_fin_validite', personne.date_fin_validite)
+            )
+        ):
+            profil_fields['compte_active_le'] = timezone.now()
+            profil_fields['activation_suspendue'] = False
 
         from apps.users.repositories.user_repository import UserRepository
         if user_fields:
             UserRepository.update(personne.user, **user_fields)
         if profil_fields:
-            PersonneExterneRepository.update(personne, **profil_fields)
+            try:
+                PersonneExterneRepository.update(personne, **profil_fields)
+            except ValidationError as exc:
+                return Response({
+                    'success': False,
+                    'message': 'Données invalides.',
+                    'data': {},
+                    'errors': exc.message_dict,
+                }, status=400)
 
         HAS.log_utilisateur(
             'MODIF',
@@ -754,8 +780,19 @@ class EtudiantDetailView(APIView):
         for fk, model_field in [('filiere_id', 'filiere'), ('niveau_id', 'niveau'), ('specialite_id', 'specialite')]:
             if fk in data:
                 profil_fields[model_field + '_id'] = data[fk]
+        for field in ('date_debut_validite', 'date_fin_validite'):
+            if field in data:
+                profil_fields[field] = data[field]
         if profil_fields:
-            EtudiantRepository.update(etudiant, **profil_fields)
+            try:
+                EtudiantRepository.update(etudiant, **profil_fields)
+            except ValidationError as exc:
+                return Response({
+                    'success': False,
+                    'message': 'Données invalides.',
+                    'data': {},
+                    'errors': exc.message_dict,
+                }, status=400)
 
         from apps.history.models import HistoriqueActionService as HAS
         HAS.log_utilisateur('MODIF', auteur=request.user, cible_user=etudiant.user,

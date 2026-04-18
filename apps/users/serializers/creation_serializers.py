@@ -15,6 +15,29 @@ from apps.specialites.rules import (
 )
 
 
+def _validate_validity_window(data, *, require_both=False):
+    date_debut = data.get('date_debut_validite')
+    date_fin = data.get('date_fin_validite')
+
+    if require_both and bool(date_debut) != bool(date_fin):
+        raise serializers.ValidationError({
+            'date_debut_validite': (
+                "Les dates de debut et de fin doivent etre renseignees ensemble."
+            ),
+            'date_fin_validite': (
+                "Les dates de debut et de fin doivent etre renseignees ensemble."
+            ),
+        })
+
+    if date_debut and date_fin and date_fin < date_debut:
+        raise serializers.ValidationError({
+            'date_fin_validite': (
+                "La date de fin doit etre posterieure ou egale a la date de debut."
+            )
+        })
+
+
+
 # =============================================================================
 # CREATION ETUDIANT (par Bibliothecaire ou Admin)
 # =============================================================================
@@ -91,12 +114,23 @@ class EtudiantCreateSerializer(serializers.Serializer):
         required=False,
         help_text="Annee d'inscription. Defaut: annee en cours. Ex: 2025"
     )
+    date_debut_validite = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="Date de debut de validite du compte. Format: YYYY-MM-DD."
+    )
+    date_fin_validite = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="Date de fin de validite du compte. Format: YYYY-MM-DD."
+    )
 
     activer_immediatement = serializers.BooleanField(
         default=False,
         help_text=(
             "Si True, le compte est active immediatement "
-            "et le cycle de 30 jours demarre maintenant. "
+            "et la validite du compte est calculee depuis la periode configuree "
+            "ou, a defaut, depuis la duree standard. "
             "Si False (defaut), le compte est cree inactif."
         )
     )
@@ -123,6 +157,7 @@ class EtudiantCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'confirm_password': "Les mots de passe ne correspondent pas."
             })
+        _validate_validity_window(data, require_both=True)
         try:
             validate_password(data['password'])
         except Exception as e:
@@ -157,12 +192,18 @@ class EtudiantUpdateSerializer(serializers.Serializer):
             f"Nouvelle specialite (obligatoire pour {LIBELLE_NIVEAUX_AVEC_SPECIALITE})."
         )
     )
+    date_debut_validite = serializers.DateField(required=False, allow_null=True)
+    date_fin_validite = serializers.DateField(required=False, allow_null=True)
 
     def validate_phone(self, value):
         phone = re.sub(r'\s+', '', value)
         if not re.match(r'^\+?[\d]{8,15}$', phone):
             raise serializers.ValidationError("Numero invalide.")
         return phone
+
+    def validate(self, data):
+        _validate_validity_window(data)
+        return data
 
 
 class EtudiantActiverSerializer(serializers.Serializer):
@@ -177,8 +218,10 @@ class EtudiantActiverSerializer(serializers.Serializer):
     action = serializers.ChoiceField(
         choices=['activer', 'reactiver'],
         help_text=(
-            "'activer'   -> premiere activation (demarre le cycle de 30 jours). "
-            "'reactiver' -> renouvelle le cycle de 30 jours (compte expire)."
+            "'activer'   -> premiere activation en tenant compte des dates de "
+            "validite si elles existent. "
+            "'reactiver' -> relance le compte en reutilisant la fenetre de "
+            "validite configuree ou la duree standard."
         )
     )
 
@@ -226,6 +269,16 @@ class PersonneExterneCreateSerializer(serializers.Serializer):
         max_length=255,
         help_text="Lieu d'habitation."
     )
+    date_debut_validite = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="Date de debut de validite du compte. Format: YYYY-MM-DD."
+    )
+    date_fin_validite = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text="Date de fin de validite du compte. Format: YYYY-MM-DD."
+    )
     password = serializers.CharField(
         write_only=True,
         min_length=8,
@@ -260,6 +313,7 @@ class PersonneExterneCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'confirm_password': "Les mots de passe ne correspondent pas."
             })
+        _validate_validity_window(data, require_both=True)
         try:
             validate_password(data['password'])
         except Exception as e:
@@ -287,12 +341,18 @@ class PersonneExterneUpdateSerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
     )
+    date_debut_validite = serializers.DateField(required=False, allow_null=True)
+    date_fin_validite = serializers.DateField(required=False, allow_null=True)
 
     def validate_phone(self, value):
         phone = re.sub(r'\s+', '', value)
         if not re.match(r'^\+?[\d]{8,15}$', phone):
             raise serializers.ValidationError("Numero invalide.")
         return phone
+
+    def validate(self, data):
+        _validate_validity_window(data)
+        return data
 
 
 # =============================================================================
@@ -457,6 +517,8 @@ class EtudiantDetailSerializer(serializers.Serializer):
     statut_compte = serializers.CharField()
     jours_restants = serializers.IntegerField(allow_null=True)
     pourcentage_validite = serializers.IntegerField(allow_null=True)
+    date_debut_validite = serializers.DateField(allow_null=True)
+    date_fin_validite = serializers.DateField(allow_null=True)
     compte_active_le = serializers.DateTimeField(allow_null=True)
     compte_expire_le = serializers.DateTimeField(allow_null=True)
     nb_reactivations = serializers.IntegerField()
@@ -498,6 +560,12 @@ class PersonneExterneDetailSerializer(serializers.Serializer):
     numero_piece = serializers.CharField()
     profession = serializers.CharField()
     lieu_habitation = serializers.CharField()
+    statut_compte = serializers.CharField()
+    jours_restants = serializers.IntegerField(allow_null=True)
+    date_debut_validite = serializers.DateField(allow_null=True)
+    date_fin_validite = serializers.DateField(allow_null=True)
+    compte_active_le = serializers.DateTimeField(allow_null=True)
+    compte_expire_le = serializers.DateTimeField(allow_null=True)
     created_at = serializers.DateTimeField()
 
 

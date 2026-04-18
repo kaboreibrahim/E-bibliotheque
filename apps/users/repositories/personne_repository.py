@@ -39,3 +39,12 @@ class PersonneExterneRepository:
     @staticmethod
     def soft_delete(personne: PersonneExterne) -> None:
         personne.delete()
+
+    @staticmethod
+    def activer(personne: PersonneExterne) -> PersonneExterne:
+        personne.activer_compte()
+        return personne
+
+    @staticmethod
+    def desactiver(personne: PersonneExterne, manuel: bool = True) -> None:
+        personne.desactiver_compte(manuel=manuel)
