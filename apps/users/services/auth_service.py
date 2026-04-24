@@ -1,10 +1,11 @@
 """
 =============================================================================
  apps/users/services/auth_service.py
- Logique métier — 3 flux de connexion distincts :
-   - Étudiant       : matricule + password → TOTP Google Authenticator
-   - Bibliothécaire : email    + password → TOTP Google Authenticator
-   - Admin          : email    + password → TOTP Google Authenticator
+ Logique métier — 4 flux de connexion distincts :
+   - Étudiant         : matricule + password → TOTP Google Authenticator
+   - Personne externe : email    + password → TOTP Google Authenticator
+   - Bibliothécaire   : email    + password → TOTP Google Authenticator
+   - Admin            : email    + password → TOTP Google Authenticator
 =============================================================================
 """
 
@@ -83,16 +84,8 @@ class EtudiantAuthService:
                 http_status=401
             )
 
-        # Vérifier que le compte est actif
-        if not user.is_active:
-            return AuthResult(
-                success=False,
-                message="Votre compte est désactivé. Contactez la bibliothèque.",
-                errors={'non_field_errors': ['Compte inactif.']},
-                http_status=403
-            )
+        etudiant.synchroniser_activation()
 
-        # Vérifier expiration du compte étudiant
         if etudiant.est_expire:
             return AuthResult(
                 success=False,
@@ -104,7 +97,32 @@ class EtudiantAuthService:
                 http_status=403
             )
 
+        # Vérifier que le compte est actif
+        if not user.is_active:
+            if (
+                etudiant.date_debut_validite
+                and etudiant.compte_active_le
+                and timezone.localdate() < etudiant.date_debut_validite
+            ):
+                return AuthResult(
+                    success=False,
+                    message=(
+                        "Votre compte sera actif a partir du "
+                        f"{etudiant.date_debut_validite.strftime('%d/%m/%Y')}."
+                    ),
+                    errors={'compte': ['Compte non encore ouvert.']},
+                    http_status=403
+                )
+            return AuthResult(
+                success=False,
+                message="Votre compte est désactivé. Contactez la bibliothèque.",
+                errors={'non_field_errors': ['Compte inactif.']},
+                http_status=403
+            )
+
         # Vérifier TOTP configuré
+        _repair_pending_totp_state(user)
+
         if not user.totp_secret or not user.is_2fa_enabled:
             return CommonAuthService.begin_first_login_totp_setup(
                 user=user,
@@ -158,6 +176,7 @@ class EtudiantAuthService:
             )
 
         # ✅ TOTP valide
+        _activate_pending_totp(user)
         UserRepository.update_totp_verified_at(user)
         tokens = _generate_tokens(user)
         HAS.log_connexion(user=user, statut='succes', ip=ip)
@@ -210,6 +229,8 @@ class BibliothecaireAuthService:
                 http_status=403
             )
 
+        _repair_pending_totp_state(user)
+
         if not user.totp_secret or not user.is_2fa_enabled:
             return CommonAuthService.begin_first_login_totp_setup(
                 user=user,
@@ -251,6 +272,7 @@ class BibliothecaireAuthService:
                 http_status=400
             )
 
+        _activate_pending_totp(user)
         UserRepository.update_totp_verified_at(user)
         tokens = _generate_tokens(user)
         HAS.log_connexion(user=user, statut='succes', ip=ip)
@@ -260,6 +282,131 @@ class BibliothecaireAuthService:
             message="Connexion réussie.",
             data=_build_successful_auth_payload(user, tokens),
             http_status=200
+        )
+
+
+class PersonneExterneAuthService:
+    """Authentification personne externe par email + mot de passe + TOTP."""
+
+    @staticmethod
+    def login(email: str, password: str, ip: str = None, ua: str = None) -> AuthResult:
+        user = UserRepository.get_by_email(email)
+
+        if not user or user.user_type != 'PERSONNE_EXTERNE':
+            HAS.log_connexion(user=None, statut='echec', ip=ip, ua=ua)
+            return AuthResult(
+                success=False,
+                message="Email ou mot de passe incorrect.",
+                errors={'non_field_errors': ['Identifiants invalides.']},
+                http_status=401
+            )
+
+        if not user.check_password(password):
+            HAS.log_connexion(user=user, statut='echec', ip=ip, ua=ua)
+            return AuthResult(
+                success=False,
+                message="Email ou mot de passe incorrect.",
+                errors={'non_field_errors': ['Identifiants invalides.']},
+                http_status=401
+            )
+
+        try:
+            personne = user.profil_personne_externe
+            personne.synchroniser_activation()
+        except Exception:
+            personne = None
+            pass
+
+        if personne and personne.est_expire:
+            return AuthResult(
+                success=False,
+                message="Votre compte a expire. Contactez l'administration.",
+                errors={'compte': ['Compte expiré.']},
+                http_status=403
+            )
+
+        if not user.is_active:
+            if (
+                personne
+                and personne.date_debut_validite
+                and personne.compte_active_le
+                and timezone.localdate() < personne.date_debut_validite
+            ):
+                return AuthResult(
+                    success=False,
+                    message=(
+                        "Votre compte sera actif a partir du "
+                        f"{personne.date_debut_validite.strftime('%d/%m/%Y')}."
+                    ),
+                    errors={'compte': ['Compte non encore ouvert.']},
+                    http_status=403
+                )
+            return AuthResult(
+                success=False,
+                message="Votre compte est desactive. Contactez l'administration.",
+                http_status=403
+            )
+
+        _repair_pending_totp_state(user)
+
+        if not user.totp_secret or not user.is_2fa_enabled:
+            return CommonAuthService.begin_first_login_totp_setup(
+                user=user,
+                ip=ip,
+                ua=ua,
+            )
+
+        HAS.log(
+            action=HAS.ACTIONS.CONNEXION_ETAPE_1,
+            user=user,
+            statut='succes',
+            ip_address=ip,
+            details={'etape': '1/2 — en attente TOTP'}
+        )
+
+        return AuthResult(
+            success=True,
+            message="Identifiants valides. Veuillez saisir votre code Google Authenticator.",
+            data={
+                'requires_totp': True,
+                'user_id': str(user.id),
+                'user_type': 'PERSONNE_EXTERNE',
+                'nom_complet': user.get_full_name(),
+            },
+            http_status=200
+        )
+
+    @staticmethod
+    def verify_totp(user_id: str, totp_code: str, ip: str = None) -> AuthResult:
+        """Étape 2 — TOTP → tokens JWT."""
+        user = UserRepository.get_by_id(user_id)
+        if not user or user.user_type != 'PERSONNE_EXTERNE':
+            return AuthResult(
+                success=False,
+                message="Personne externe introuvable.",
+                http_status=404,
+            )
+
+        totp = pyotp.TOTP(user.totp_secret)
+        if not totp.verify(totp_code, valid_window=1):
+            HAS.log_totp(user=user, statut='echec', ip=ip)
+            return AuthResult(
+                success=False,
+                message="Code Google Authenticator invalide ou expire.",
+                errors={'totp_code': ['Code TOTP incorrect.']},
+                http_status=400,
+            )
+
+        _activate_pending_totp(user)
+        UserRepository.update_totp_verified_at(user)
+        tokens = _generate_tokens(user)
+        HAS.log_connexion(user=user, statut='succes', ip=ip)
+
+        return AuthResult(
+            success=True,
+            message="Connexion reussie.",
+            data=_build_successful_auth_payload(user, tokens),
+            http_status=200,
         )
 
 
@@ -298,6 +445,8 @@ class AdminAuthService:
 
         if not user.is_active:
             return AuthResult(success=False, message="Compte désactivé.", http_status=403)
+
+        _repair_pending_totp_state(user)
 
         if not user.totp_secret or not user.is_2fa_enabled:
             return CommonAuthService.begin_first_login_totp_setup(
@@ -340,6 +489,7 @@ class AdminAuthService:
                 http_status=400
             )
 
+        _activate_pending_totp(user)
         UserRepository.update_totp_verified_at(user)
         tokens = _generate_tokens(user)
         HAS.log_connexion(user=user, statut='succes', ip=ip)
@@ -605,6 +755,18 @@ def _generate_tokens(user: User) -> dict:
     return {'access': str(refresh.access_token), 'refresh': str(refresh)}
 
 
+def _activate_pending_totp(user: User) -> User:
+    if user.totp_secret and not user.is_2fa_enabled:
+        UserRepository.enable_2fa(user)
+    return user
+
+
+def _repair_pending_totp_state(user: User) -> User:
+    if user.totp_secret and user.totp_verified_at and not user.is_2fa_enabled:
+        UserRepository.enable_2fa(user)
+    return user
+
+
 def _generate_qr_code_base64(qr_uri: str) -> str:
     import qrcode
 
@@ -679,6 +841,14 @@ def _build_successful_auth_payload(user: User, tokens: dict) -> dict:
                 'specialite': str(etu.specialite) if etu.specialite else None,
                 'jours_restants': etu.jours_restants,
                 'statut_compte': etu.statut_compte,
+                'date_debut_validite': (
+                    etu.date_debut_validite.isoformat()
+                    if etu.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    etu.date_fin_validite.isoformat()
+                    if etu.date_fin_validite else None
+                ),
             }
         except Exception:
             pass
@@ -697,6 +867,31 @@ def _build_successful_auth_payload(user: User, tokens: dict) -> dict:
         except Exception:
             pass
         data['permissions'] = permissions
+        return data
+
+    if user.user_type == 'PERSONNE_EXTERNE':
+        profil = {}
+        try:
+            personne = user.profil_personne_externe
+            profil = {
+                'personne_externe_id': str(personne.id),
+                'numero_piece': personne.numero_piece,
+                'profession': personne.profession,
+                'lieu_habitation': personne.lieu_habitation,
+                'statut_compte': personne.statut_compte,
+                'jours_restants': personne.jours_restants,
+                'date_debut_validite': (
+                    personne.date_debut_validite.isoformat()
+                    if personne.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    personne.date_fin_validite.isoformat()
+                    if personne.date_fin_validite else None
+                ),
+            }
+        except Exception:
+            pass
+        data['profil'] = profil
         return data
 
     data['is_superuser'] = user.is_superuser

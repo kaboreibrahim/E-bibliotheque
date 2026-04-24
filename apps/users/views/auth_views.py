@@ -1,7 +1,7 @@
 """
 =============================================================================
  apps/users/views/auth_views.py
- APIViews — 3 flux d'authentification séparés avec docs Swagger complètes
+ APIViews — 4 flux d'authentification séparés avec docs Swagger complètes
 =============================================================================
 """
 
@@ -16,6 +16,7 @@ from rest_framework import serializers as drf_serializers
 
 from apps.users.serializers.auth_serializers import (
     EtudiantLoginSerializer, EtudiantTOTPVerifySerializer,
+    PersonneExterneLoginSerializer, PersonneExterneTOTPVerifySerializer,
     BibliothecaireLoginSerializer, BibliothecaireTOTPVerifySerializer,
     AdminLoginSerializer, AdminTOTPVerifySerializer,
     OTPSendSerializer, OTPVerifySerializer,
@@ -24,6 +25,7 @@ from apps.users.serializers.auth_serializers import (
 )
 from apps.users.services.auth_service import (
     EtudiantAuthService,
+    PersonneExterneAuthService,
     BibliothecaireAuthService,
     AdminAuthService,
     CommonAuthService,
@@ -43,6 +45,56 @@ def _resp(result):
         {'success': result.success, 'message': result.message,
          'data': result.data or {}, 'errors': result.errors or {}},
         status=result.http_status
+    )
+
+
+def _login_totp_setup_serializer(name: str, **kwargs):
+    return inline_serializer(
+        name,
+        fields={
+            'totp_secret': drf_serializers.CharField(
+                help_text="Secret base32 a scanner ou saisir manuellement."
+            ),
+            'qr_uri': drf_serializers.CharField(
+                help_text="URI otpauth a encoder ou ouvrir dans une app compatible."
+            ),
+            'qr_code_base64': drf_serializers.CharField(
+                help_text="Image PNG base64 prete a afficher."
+            ),
+            'instructions': drf_serializers.ListField(
+                child=drf_serializers.CharField()
+            ),
+        },
+        **kwargs,
+    )
+
+
+def _login_step1_data_serializer(name: str, user_type_help: str):
+    return inline_serializer(
+        name,
+        fields={
+            'requires_totp': drf_serializers.BooleanField(
+                required=False,
+                help_text="True quand la 2FA est deja active et qu'un code TOTP est attendu."
+            ),
+            'requires_totp_setup': drf_serializers.BooleanField(
+                required=False,
+                help_text="True quand la configuration initiale du TOTP est requise."
+            ),
+            'user_id': drf_serializers.UUIDField(
+                help_text="UUID a reutiliser pour l'etape suivante."
+            ),
+            'user_type': drf_serializers.CharField(help_text=user_type_help),
+            'nom_complet': drf_serializers.CharField(),
+            'setup_token': drf_serializers.CharField(
+                required=False,
+                help_text="Jeton temporaire a reutiliser sur /api/auth/totp/confirm/ sans session."
+            ),
+            'totp_setup': _login_totp_setup_serializer(
+                f'{name}TotpSetup',
+                required=False,
+            ),
+        },
     )
 
 
@@ -75,30 +127,31 @@ POST /api/auth/etudiant/totp/verify/ ← étape 2 (code Google Authenticator)
          ↓  retourne access + refresh tokens
 ```
 
-### Vérifications effectuées :
+### Reponse 200 possible :
+- `requires_totp = true` si la 2FA est deja activee.
+- `requires_totp_setup = true` si la 2FA n'est pas encore activee.
+- Dans ce second cas, la reponse contient aussi `setup_token` + `totp_setup`
+  avec le QR code et le secret a confirmer sur `/api/auth/totp/confirm/`.
+
+### Verifications effectuees :
 - Matricule valide (format ETU + année + 5 chiffres)
 - Mot de passe correct
 - Compte actif (`is_active = True`)
 - Compte non expiré (`compte_expire_le` non dépassé)
-- Google Authenticator configuré (`is_2fa_enabled = True`)
+- Si Google Authenticator n'est pas encore active, le backend retourne le setup.
         """,
         request=EtudiantLoginSerializer,
         responses={
             200: OpenApiResponse(
-                description="Identifiants valides — TOTP requis",
+                description="Identifiants valides — soit TOTP requis, soit configuration TOTP demandee",
                 response=inline_serializer('EtudiantLoginOK', fields={
                     'success':      drf_serializers.BooleanField(),
                     'message':      drf_serializers.CharField(),
-                    'data': inline_serializer('EtudiantLoginData', fields={
-                        'requires_totp': drf_serializers.BooleanField(help_text="Toujours True — le TOTP est obligatoire"),
-                        'user_id':       drf_serializers.UUIDField(help_text="À passer à l'étape 2"),
-                        'user_type':     drf_serializers.CharField(help_text="ETUDIANT"),
-                        'nom_complet':   drf_serializers.CharField(help_text="Prénom Nom de l'étudiant"),
-                    })
+                    'data': _login_step1_data_serializer('EtudiantLoginData', 'ETUDIANT')
                 })
             ),
             401: OpenApiResponse(description="Matricule ou mot de passe incorrect"),
-            403: OpenApiResponse(description="Compte désactivé, expiré ou 2FA non configuré"),
+            403: OpenApiResponse(description="Compte desactive ou expire"),
         },
         examples=[
             OpenApiExample(
@@ -107,7 +160,7 @@ POST /api/auth/etudiant/totp/verify/ ← étape 2 (code Google Authenticator)
                 request_only=True,
             ),
             OpenApiExample(
-                'Réponse succès',
+                'Reponse succes - TOTP requis',
                 value={
                     'success': True,
                     'message': 'Identifiants valides. Veuillez saisir votre code Google Authenticator.',
@@ -116,6 +169,34 @@ POST /api/auth/etudiant/totp/verify/ ← étape 2 (code Google Authenticator)
                         'user_id':       '550e8400-e29b-41d4-a716-446655440000',
                         'user_type':     'ETUDIANT',
                         'nom_complet':   'Inès IRIÉ',
+                    },
+                    'errors': {}
+                },
+                response_only=True, status_codes=['200'],
+            ),
+            OpenApiExample(
+                'Reponse succes - premiere configuration TOTP',
+                value={
+                    'success': True,
+                    'message': 'Premiere connexion detectee. Scannez le QR code Google Authenticator puis confirmez votre code TOTP.',
+                    'data': {
+                        'requires_totp': False,
+                        'requires_totp_setup': True,
+                        'user_id': '550e8400-e29b-41d4-a716-446655440000',
+                        'user_type': 'ETUDIANT',
+                        'nom_complet': 'Ines IRIE',
+                        'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature',
+                        'totp_setup': {
+                            'totp_secret': 'JBSWY3DPEHPK3PXP',
+                            'qr_uri': 'otpauth://totp/Bibliotheque%20Universitaire%20CI:etu%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Bibliotheque+Universitaire+CI',
+                            'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
+                            'instructions': [
+                                '1. Ouvrez Google Authenticator sur votre telephone.',
+                                "2. Appuyez sur '+' puis 'Scanner un QR code'.",
+                                '3. Scannez le QR code ou entrez le secret manuellement.',
+                                '4. Confirmez avec le code genere sur /api/auth/totp/confirm/.',
+                            ],
+                        },
                     },
                     'errors': {}
                 },
@@ -254,6 +335,164 @@ Authorization: Bearer <access_token>
         ))
 
 
+class PersonneExterneLoginView(APIView):
+    """POST /api/auth/personne-externe/login/ — Étape 1."""
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=['Auth — Personne externe'],
+        summary='Connexion personne externe (étape 1/2) — Email + Mot de passe',
+        description="""
+## Connexion Personne Externe — Étape 1/2
+
+Connexion par **email** + **mot de passe**.
+
+### Flux complet :
+```
+POST /api/auth/personne-externe/login/       ← étape 1
+POST /api/auth/personne-externe/totp/verify/ ← étape 2 (TOTP obligatoire)
+```
+
+### Reponse 200 possible :
+- `requires_totp = true` si la 2FA est deja activee.
+- `requires_totp_setup = true` si la 2FA doit encore etre configuree.
+- Le cas `requires_totp_setup` retourne aussi `setup_token` et `totp_setup`.
+        """,
+        request=PersonneExterneLoginSerializer,
+        responses={
+            200: OpenApiResponse(
+                description="Identifiants valides — soit TOTP requis, soit configuration TOTP demandee",
+                response=inline_serializer('PersonneExterneLoginOK', fields={
+                    'success': drf_serializers.BooleanField(),
+                    'message': drf_serializers.CharField(),
+                    'data': _login_step1_data_serializer(
+                        'PersonneExterneLoginData',
+                        'PERSONNE_EXTERNE',
+                    ),
+                })
+            ),
+            401: OpenApiResponse(description="Email ou mot de passe incorrect"),
+            403: OpenApiResponse(description="Compte désactivé"),
+        },
+        examples=[
+            OpenApiExample(
+                'Requête',
+                request_only=True,
+                value={'email': 'externe@example.com', 'password': 'Externe@2025!'}
+            ),
+            OpenApiExample(
+                'Succès — TOTP requis',
+                response_only=True,
+                status_codes=['200'],
+                value={
+                    'success': True,
+                    'message': 'Identifiants valides. Veuillez saisir votre code Google Authenticator.',
+                    'data': {
+                        'requires_totp': True,
+                        'user_id': '550e8400-e29b-41d4-a716-446655440000',
+                        'user_type': 'PERSONNE_EXTERNE',
+                        'nom_complet': 'Awa TRAORE',
+                    },
+                    'errors': {}
+                }
+            ),
+            OpenApiExample(
+                'Succes — configuration TOTP requise',
+                response_only=True,
+                status_codes=['200'],
+                value={
+                    'success': True,
+                    'message': 'Premiere connexion detectee. Scannez le QR code Google Authenticator puis confirmez votre code TOTP.',
+                    'data': {
+                        'requires_totp': False,
+                        'requires_totp_setup': True,
+                        'user_id': '550e8400-e29b-41d4-a716-446655440000',
+                        'user_type': 'PERSONNE_EXTERNE',
+                        'nom_complet': 'Awa TRAORE',
+                        'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature',
+                        'totp_setup': {
+                            'totp_secret': 'JBSWY3DPEHPK3PXP',
+                            'qr_uri': 'otpauth://totp/Bibliotheque%20Universitaire%20CI:externe%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Bibliotheque+Universitaire+CI',
+                            'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
+                            'instructions': [
+                                '1. Ouvrez Google Authenticator sur votre telephone.',
+                                "2. Appuyez sur '+' puis 'Scanner un QR code'.",
+                                '3. Scannez le QR code ou entrez le secret manuellement.',
+                                '4. Confirmez avec le code genere sur /api/auth/totp/confirm/.',
+                            ],
+                        },
+                    },
+                    'errors': {}
+                }
+            ),
+        ]
+    )
+    def post(self, request):
+        s = PersonneExterneLoginSerializer(data=request.data)
+        if not s.is_valid():
+            return Response({'success': False, 'errors': s.errors, 'data': {}, 'message': 'Données invalides.'}, status=400)
+        m = _meta(request)
+        return _resp(PersonneExterneAuthService.login(
+            email=s.validated_data['email'],
+            password=s.validated_data['password'],
+            ip=m['ip'], ua=m['ua']
+        ))
+
+
+class PersonneExterneTOTPVerifyView(APIView):
+    """POST /api/auth/personne-externe/totp/verify/ — Étape 2."""
+    permission_classes = [AllowAny]
+
+    @extend_schema(
+        tags=['Auth — Personne externe'],
+        summary='Connexion personne externe (étape 2/2) — Code Google Authenticator',
+        description="Valide le code TOTP et retourne les tokens JWT de la personne externe.",
+        request=PersonneExterneTOTPVerifySerializer,
+        responses={
+            200: OpenApiResponse(description="Connexion réussie"),
+            400: OpenApiResponse(description="Code TOTP invalide ou expiré"),
+            404: OpenApiResponse(description="Personne externe introuvable"),
+        },
+        examples=[
+            OpenApiExample(
+                'Requête',
+                request_only=True,
+                value={'user_id': '550e8400-e29b-41d4-a716-446655440000', 'totp_code': '123456'}
+            ),
+            OpenApiExample(
+                'Succès',
+                response_only=True,
+                status_codes=['200'],
+                value={
+                    'success': True,
+                    'message': 'Connexion reussie.',
+                    'data': {
+                        'access': 'eyJhbGciOiJIUzI1NiJ9...',
+                        'refresh': 'eyJhbGciOiJIUzI1NiJ9...',
+                        'user_id': '550e8400-e29b-41d4-a716-446655440000',
+                        'user_type': 'PERSONNE_EXTERNE',
+                        'email': 'externe@example.com',
+                        'nom_complet': 'Awa TRAORE',
+                        'profil': {
+                            'personne_externe_id': '650e8400-e29b-41d4-a716-446655440000',
+                        }
+                    },
+                    'errors': {}
+                }
+            ),
+        ]
+    )
+    def post(self, request):
+        s = PersonneExterneTOTPVerifySerializer(data=request.data)
+        if not s.is_valid():
+            return Response({'success': False, 'errors': s.errors, 'data': {}, 'message': 'Données invalides.'}, status=400)
+        return _resp(PersonneExterneAuthService.verify_totp(
+            user_id=str(s.validated_data['user_id']),
+            totp_code=s.validated_data['totp_code'],
+            ip=_meta(request)['ip']
+        ))
+
+
 # =============================================================================
 # 📖  BIBLIOTHÉCAIRE AUTH
 # =============================================================================
@@ -275,12 +514,27 @@ Connexion par **email professionnel** + **mot de passe**.
 POST /api/auth/bibliothecaire/login/       ← étape 1
 POST /api/auth/bibliothecaire/totp/verify/ ← étape 2 (TOTP obligatoire)
 ```
+
+### Reponse 200 possible :
+- `requires_totp = true` si la 2FA est deja activee.
+- `requires_totp_setup = true` si la configuration TOTP doit etre finalisee.
+- Dans ce cas, la reponse contient `setup_token` et `totp_setup`.
         """,
         request=BibliothecaireLoginSerializer,
         responses={
-            200: OpenApiResponse(description="Identifiants valides — TOTP requis"),
+            200: OpenApiResponse(
+                description="Identifiants valides — soit TOTP requis, soit configuration TOTP demandee",
+                response=inline_serializer('BibliothecaireLoginOK', fields={
+                    'success': drf_serializers.BooleanField(),
+                    'message': drf_serializers.CharField(),
+                    'data': _login_step1_data_serializer(
+                        'BibliothecaireLoginData',
+                        'BIBLIOTHECAIRE',
+                    ),
+                })
+            ),
             401: OpenApiResponse(description="Email ou mot de passe incorrect"),
-            403: OpenApiResponse(description="Compte désactivé ou TOTP non configuré"),
+            403: OpenApiResponse(description="Compte desactive"),
         },
         examples=[
             OpenApiExample(
@@ -288,7 +542,7 @@ POST /api/auth/bibliothecaire/totp/verify/ ← étape 2 (TOTP obligatoire)
                 value={'email': 'biblio.kone@universite-ci.edu', 'password': 'Biblio@2025!'}
             ),
             OpenApiExample(
-                'Succès', response_only=True, status_codes=['200'],
+                'Succes — TOTP requis', response_only=True, status_codes=['200'],
                 value={
                     'success': True,
                     'message': 'Identifiants valides. Veuillez saisir votre code Google Authenticator.',
@@ -298,6 +552,35 @@ POST /api/auth/bibliothecaire/totp/verify/ ← étape 2 (TOTP obligatoire)
                         'user_type':     'BIBLIOTHECAIRE',
                         'nom_complet':   'Mariam KONÉ',
                     }, 'errors': {}
+                }
+            ),
+            OpenApiExample(
+                'Succes — configuration TOTP requise',
+                response_only=True,
+                status_codes=['200'],
+                value={
+                    'success': True,
+                    'message': 'Premiere connexion detectee. Scannez le QR code Google Authenticator puis confirmez votre code TOTP.',
+                    'data': {
+                        'requires_totp': False,
+                        'requires_totp_setup': True,
+                        'user_id': '661e8400-e29b-41d4-a716-446655440111',
+                        'user_type': 'BIBLIOTHECAIRE',
+                        'nom_complet': 'Mariam KONE',
+                        'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature',
+                        'totp_setup': {
+                            'totp_secret': 'JBSWY3DPEHPK3PXP',
+                            'qr_uri': 'otpauth://totp/Bibliotheque%20Universitaire%20CI:biblio.kone%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=Bibliotheque+Universitaire+CI',
+                            'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
+                            'instructions': [
+                                '1. Ouvrez Google Authenticator sur votre telephone.',
+                                "2. Appuyez sur '+' puis 'Scanner un QR code'.",
+                                '3. Scannez le QR code ou entrez le secret manuellement.',
+                                '4. Confirmez avec le code genere sur /api/auth/totp/confirm/.',
+                            ],
+                        },
+                    },
+                    'errors': {}
                 }
             ),
         ]
@@ -394,16 +677,31 @@ Connexion par **email** + **mot de passe**.
 POST /api/auth/admin/login/        ← étape 1
 POST /api/auth/admin/totp/verify/  ← étape 2 (TOTP obligatoire)
 ```
+
+### Reponse 200 possible :
+- `requires_totp = true` si la 2FA est deja activee.
+- `requires_totp_setup = true` si la configuration initiale est encore attendue.
+- Le flux de setup retourne `setup_token` et `totp_setup`.
         """,
         request=AdminLoginSerializer,
         responses={
-            200: OpenApiResponse(description="Identifiants valides — TOTP requis"),
+            200: OpenApiResponse(
+                description="Identifiants valides — soit TOTP requis, soit configuration TOTP demandee",
+                response=inline_serializer('AdminLoginOK', fields={
+                    'success': drf_serializers.BooleanField(),
+                    'message': drf_serializers.CharField(),
+                    'data': _login_step1_data_serializer(
+                        'AdminLoginData',
+                        'ADMINISTRATEUR',
+                    ),
+                })
+            ),
             401: OpenApiResponse(description="Email ou mot de passe incorrect"),
         },
         examples=[
             OpenApiExample('Requête', request_only=True,
                 value={'email': 'admin@universite-ci.edu', 'password': 'Admin@2025!'}),
-            OpenApiExample('Succès', response_only=True, status_codes=['200'],
+            OpenApiExample('Succes — TOTP requis', response_only=True, status_codes=['200'],
                 value={
                     'success': True,
                     'message': 'Identifiants valides. Veuillez saisir votre code Google Authenticator.',
@@ -412,6 +710,30 @@ POST /api/auth/admin/totp/verify/  ← étape 2 (TOTP obligatoire)
                         'user_id':   '772e8400-e29b-41d4-a716-446655440222',
                         'user_type': 'ADMINISTRATEUR',
                         'nom_complet': 'Kouamé BROU',
+                    }, 'errors': {}
+                }),
+            OpenApiExample('Succes — configuration TOTP requise', response_only=True, status_codes=['200'],
+                value={
+                    'success': True,
+                    'message': 'Premiere connexion detectee. Scannez le QR code Google Authenticator puis confirmez votre code TOTP.',
+                    'data': {
+                        'requires_totp': False,
+                        'requires_totp_setup': True,
+                        'user_id': '772e8400-e29b-41d4-a716-446655440222',
+                        'user_type': 'ADMINISTRATEUR',
+                        'nom_complet': 'Kouame BROU',
+                        'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature',
+                        'totp_setup': {
+                            'totp_secret': 'JBSWY3DPEHPK3PXP',
+                            'qr_uri': 'otpauth://totp/Bibliotheque%20Universitaire%20CI:admin%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=Bibliotheque+Universitaire+CI',
+                            'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
+                            'instructions': [
+                                '1. Ouvrez Google Authenticator sur votre telephone.',
+                                "2. Appuyez sur '+' puis 'Scanner un QR code'.",
+                                '3. Scannez le QR code ou entrez le secret manuellement.',
+                                '4. Confirmez avec le code genere sur /api/auth/totp/confirm/.',
+                            ],
+                        },
                     }, 'errors': {}
                 }),
         ]
@@ -466,7 +788,7 @@ class AdminTOTPVerifyView(APIView):
 
 
 # =============================================================================
-# 🔧  TOTP SETUP (commun Admin + Biblio)
+# 🔧  TOTP SETUP (commun rôles avec 2FA)
 # =============================================================================
 
 class TOTPSetupView(APIView):
@@ -481,7 +803,7 @@ class TOTPSetupView(APIView):
 
 Génère un **secret TOTP** et un **QR code URI** à scanner avec Google Authenticator.
 
-**Réservé aux Admin et Bibliothécaires.**
+**Disponible pour les comptes dont la 2FA est obligatoire.**
 
 Après avoir scanné, confirmez avec `/api/auth/totp/confirm/`.
         """,
@@ -497,7 +819,7 @@ Après avoir scanné, confirmez avec `/api/auth/totp/confirm/`.
                     })
                 })
             ),
-            403: OpenApiResponse(description="Réservé aux Admin et Bibliothécaires"),
+            403: OpenApiResponse(description="Réservé aux comptes avec 2FA obligatoire"),
         },
         examples=[
             OpenApiExample('Réponse', response_only=True, status_codes=['200'],
@@ -520,7 +842,7 @@ Après avoir scanné, confirmez avec `/api/auth/totp/confirm/`.
     )
     def get(self, request):
         if not request.user.requires_2fa:
-            return Response({'success': False, 'message': 'Réservé aux Admin et Bibliothécaires.'}, status=403)
+            return Response({'success': False, 'message': 'Réservé aux comptes avec 2FA obligatoire.'}, status=403)
         return _resp(CommonAuthService.setup_totp(request.user))
 
 
@@ -534,11 +856,13 @@ class TOTPConfirmView(APIView):
         description=(
             "Valide le premier code TOTP après scan du QR code. "
             "Fonctionne soit avec une session authentifiee, soit avec le "
-            "`setup_token` retourne lors d'une premiere connexion."
+            "`setup_token` retourne lors d'une premiere connexion. "
+            "Quand `setup_token` est fourni, la reponse finalise aussi la connexion "
+            "et retourne les tokens JWT."
         ),
         request=TOTPSetupConfirmSerializer,
         responses={
-            200: OpenApiResponse(description="2FA activé avec succès"),
+            200: OpenApiResponse(description="2FA activee avec succes, avec tokens JWT en cas de premiere connexion"),
             400: OpenApiResponse(description="Code invalide"),
         },
         examples=[
@@ -548,10 +872,21 @@ class TOTPConfirmView(APIView):
                 request_only=True,
                 value={'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature', 'totp_code': '123456'}
             ),
-            OpenApiExample('Succès', response_only=True, status_codes=['200'],
+            OpenApiExample('Succes — session authentifiee', response_only=True, status_codes=['200'],
                 value={'success': True,
-                    'message': 'Google Authenticator activé avec succès ! Le 2FA est maintenant actif.',
+                    'message': 'Google Authenticator activé avec succès ! Le 2FA est maintenant actif sur votre compte.',
                     'data': {}, 'errors': {}}),
+            OpenApiExample('Succes — premiere connexion', response_only=True, status_codes=['200'],
+                value={'success': True,
+                    'message': 'Google Authenticator active. Connexion reussie.',
+                    'data': {
+                        'access': 'eyJhbGciOiJIUzI1NiJ9...',
+                        'refresh': 'eyJhbGciOiJIUzI1NiJ9...',
+                        'user_id': '661e8400-e29b-41d4-a716-446655440111',
+                        'user_type': 'BIBLIOTHECAIRE',
+                        'email': 'biblio.kone@universite-ci.edu',
+                        'nom_complet': 'Mariam KONE'
+                    }, 'errors': {}}),
         ]
     )
     def post(self, request):

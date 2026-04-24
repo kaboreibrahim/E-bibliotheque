@@ -10,6 +10,11 @@ from apps.documents.models import Document, TypeDocument
 from apps.documents.repositories import DocumentRepository
 from apps.history.models import HistoriqueActionService
 
+DOCUMENT_LEVEL_ORDER = ("L1", "L2", "L3", "M1", "M2", "DOCTORAT")
+DOCUMENT_LEVEL_RANKS = {
+    level_name: rank for rank, level_name in enumerate(DOCUMENT_LEVEL_ORDER)
+}
+
 
 class DocumentService:
 
@@ -21,9 +26,49 @@ class DocumentService:
         self.repo = repo or DocumentRepository()
         self.consultation_service = consultation_service or ConsultationService()
 
+    @staticmethod
+    def _get_student_document_scope(user) -> dict[str, object] | None:
+        if not user or not getattr(user, "is_authenticated", False):
+            return None
+
+        if not getattr(user, "is_etudiant", False):
+            return None
+
+        try:
+            profil_etudiant = user.profil_etudiant
+        except AttributeError:
+            return []
+
+        filiere_id = getattr(profil_etudiant, "filiere_id", None)
+        niveau = getattr(profil_etudiant, "niveau", None)
+        specialite = getattr(profil_etudiant, "specialite", None)
+        niveau_name = getattr(niveau, "name", None)
+        specialite_name = getattr(specialite, "name", None)
+        if not filiere_id or not niveau_name or not specialite_name:
+            return {
+                "allowed_level_names": [],
+                "allowed_filiere_id": filiere_id,
+                "allowed_specialite_name": specialite_name,
+            }
+
+        max_rank = DOCUMENT_LEVEL_RANKS.get(niveau_name)
+        if max_rank is None:
+            return {
+                "allowed_level_names": [],
+                "allowed_filiere_id": filiere_id,
+                "allowed_specialite_name": specialite_name,
+            }
+
+        return {
+            "allowed_level_names": list(DOCUMENT_LEVEL_ORDER[: max_rank + 1]),
+            "allowed_filiere_id": filiere_id,
+            "allowed_specialite_name": specialite_name,
+        }
+
     def list_documents(
         self,
         *,
+        user=None,
         type_document: str | None = None,
         filiere_id: str | None = None,
         niveau_id: str | None = None,
@@ -34,12 +79,9 @@ class DocumentService:
         search: str = "",
     ):
         if type_document:
-            type_document = type_document.upper()
-            valides = [c[0] for c in TypeDocument.choices]
-            if type_document not in valides:
-                raise ValidationError(
-                    f"Type de document invalide. Valeurs autorisees : {', '.join(valides)}."
-                )
+            type_document = TypeDocument.normalize_code(type_document)
+
+        student_scope = self._get_student_document_scope(user) or {}
 
         return self.repo.get_filtered(
             type_document=type_document,
@@ -50,10 +92,15 @@ class DocumentService:
             ajoute_par_id=ajoute_par_id,
             annee_academique_debut=annee_academique_debut,
             search=search.strip(),
+            **student_scope,
         )
 
-    def get_document(self, document_id: str) -> Document:
-        document = self.repo.get_by_id(document_id)
+    def get_document(self, document_id: str, *, user=None) -> Document:
+        student_scope = self._get_student_document_scope(user) or {}
+        document = self.repo.get_by_id(
+            document_id,
+            **student_scope,
+        )
         if not document:
             raise ValidationError(f"Document introuvable : {document_id}.")
         return document
@@ -86,11 +133,12 @@ class DocumentService:
         self,
         *,
         document_id: str,
+        user=None,
         user_id: str | None = None,
         ip_address: str | None = None,
         user_agent: str = "",
     ) -> tuple[Document, Consultation]:
-        document = self.get_document(document_id)
+        document = self.get_document(document_id, user=user)
         consultation = self.consultation_service.enregistrer_vue(
             document_id=str(document.pk),
             user_id=user_id,

@@ -122,6 +122,12 @@ class UserRepository:
         return user
 
     @staticmethod
+    def enable_2fa(user: User) -> User:
+        user.is_2fa_enabled = True
+        user.save(update_fields=['is_2fa_enabled', 'updated_at'])
+        return user
+
+    @staticmethod
     def update_totp_verified_at(user: User) -> User:
         from django.utils import timezone
         user.totp_verified_at = timezone.now()

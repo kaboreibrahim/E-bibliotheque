@@ -4,6 +4,7 @@
  Routes Auth — 3 flux séparés par rôle + communs
 
  ROUTES ÉTUDIANT   → /api/auth/etudiant/...
+ ROUTES EXTERNE    → /api/auth/personne-externe/...
  ROUTES BIBLIO     → /api/auth/bibliothecaire/...
  ROUTES ADMIN      → /api/auth/admin/...
  ROUTES COMMUNES   → /api/auth/...
@@ -15,6 +16,8 @@ from apps.users.views.auth_views import (
     # Étudiant
     EtudiantLoginView,
     EtudiantTOTPVerifyView,
+    PersonneExterneLoginView,
+    PersonneExterneTOTPVerifyView,
     # Bibliothécaire
     BibliothecaireLoginView,
     BibliothecaireTOTPVerifyView,
@@ -52,6 +55,16 @@ auth_urlpatterns = [
         'etudiant/totp/verify/',
         EtudiantTOTPVerifyView.as_view(),
         name='etudiant-totp-verify'
+    ),
+    path(
+        'personne-externe/login/',
+        PersonneExterneLoginView.as_view(),
+        name='personne-externe-login'
+    ),
+    path(
+        'personne-externe/totp/verify/',
+        PersonneExterneTOTPVerifyView.as_view(),
+        name='personne-externe-totp-verify'
     ),
 
     # ══════════════════════════════════════════════════════
@@ -155,8 +168,12 @@ from django.urls import path
 from apps.users.views.creation_views import (
     EtudiantListView,
     EtudiantCreateView,
+    EtudiantExportExcelView,
     EtudiantDetailView,
     EtudiantActiverView,
+    PersonneExterneListView,
+    PersonneExterneCreateView,
+    PersonneExterneDetailView,
     BibliothecaireListView,
     BibliothecaireCreateView,
     BibliothecaireDetailView,
@@ -175,6 +192,12 @@ etudiant_urlpatterns = [
             'post': EtudiantCreateView.post,
         }).as_view(),
         name='etudiant-list-create'
+    ),
+
+    path(
+        'export/excel/',
+        EtudiantExportExcelView.as_view(),
+        name='etudiant-export-excel'
     ),
  
     # ── Détail + Modification + Suppression ──────────────────
@@ -196,6 +219,23 @@ etudiant_urlpatterns = [
         name='etudiant-activer'
     ),
     
+]
+
+
+personne_externe_urlpatterns = [
+    path(
+        '',
+        type('_PView', (PersonneExterneListView, PersonneExterneCreateView), {
+            'get': PersonneExterneListView.get,
+            'post': PersonneExterneCreateView.post,
+        }).as_view(),
+        name='personne-externe-list-create'
+    ),
+    path(
+        '<uuid:personne_id>/',
+        PersonneExterneDetailView.as_view(),
+        name='personne-externe-detail'
+    ),
 ]
  
  

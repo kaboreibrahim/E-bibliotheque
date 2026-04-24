@@ -107,8 +107,8 @@ class DocumentUE(models.Model):
             raise ValidationError({"specialite": "La specialite doit appartenir au meme niveau que le document."})
 
         doc_type = getattr(self, "type", None)
-        if doc_type in {TypeDocument.MEMOIRE, TypeDocument.THESE} and not self.auteur:
+        if TypeDocument.requires_auteur(doc_type) and not self.auteur:
             raise ValidationError({"auteur": "L'auteur est requis pour un memoire ou une these."})
 
-        if doc_type in {TypeDocument.COURS, TypeDocument.EXAMEN} and not self.encadreur:
+        if TypeDocument.requires_encadreur(doc_type) and not self.encadreur:
             raise ValidationError({"encadreur": "L'encadreur ou sujet est requis pour un cours ou un examen."})

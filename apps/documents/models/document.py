@@ -1,15 +1,18 @@
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from safedelete.models import SOFT_DELETE_CASCADE, SafeDeleteModel
 
 from apps.documents.models.document_type_models import TypeDocument
 from apps.documents.models.document_ue_models import DocumentUE
-from apps.filiere.models import Filiere
-from apps.niveau.models import Niveau
-from apps.ue.models import UE
-from apps.users.models.user_models import document_file_upload_path
+from apps.documents.utils import (
+    DEFAULT_DOCUMENT_MIME_TYPE,
+    build_document_data_uri,
+    build_document_file_name,
+    normalize_base64_document,
+)
 
 
 class Document(DocumentUE, SafeDeleteModel):
@@ -19,14 +22,24 @@ class Document(DocumentUE, SafeDeleteModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255, verbose_name="Titre")
-    type = models.CharField(
-        max_length=20,
-        choices=TypeDocument.choices,
+    type = models.ForeignKey(
+        TypeDocument,
+        on_delete=models.PROTECT,
+        related_name="documents",
         verbose_name="Type de document",
     )
-    file_path = models.FileField(
-        upload_to=document_file_upload_path,
-        verbose_name="Fichier",
+    file_base64 = models.TextField(
+        verbose_name="Fichier encode en Base64",
+    )
+    file_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Nom du fichier",
+    )
+    file_mime_type = models.CharField(
+        max_length=100,
+        blank=True,
+        verbose_name="Type MIME",
     )
     description = models.TextField(blank=True, verbose_name="Description")
 
@@ -47,9 +60,44 @@ class Document(DocumentUE, SafeDeleteModel):
         verbose_name_plural = "Documents"
         ordering = ["-created_at"]
 
+    @property
+    def has_file_content(self) -> bool:
+        return bool(self.file_base64)
+
+    @property
+    def file_data_uri(self) -> str | None:
+        return build_document_data_uri(self.file_base64, self.file_mime_type)
+
+    def clean(self):
+        if not self.type_id:
+            raise ValidationError({"type": "Le type de document est obligatoire."})
+
+        super().clean()
+
+        if not self.file_base64:
+            raise ValidationError({"file_base64": "Le contenu Base64 du document est obligatoire."})
+
+        try:
+            normalized_base64, detected_mime_type = normalize_base64_document(self.file_base64)
+        except ValueError as exc:
+            raise ValidationError({"file_base64": str(exc)}) from exc
+
+        self.file_base64 = normalized_base64
+        if not self.file_mime_type:
+            self.file_mime_type = detected_mime_type or DEFAULT_DOCUMENT_MIME_TYPE
+        if not self.file_name:
+            self.file_name = build_document_file_name(self.title, self.file_mime_type)
+
+    @property
+    def type_code(self) -> str:
+        return TypeDocument.get_code(self.type)
+
+    def get_type_display(self) -> str:
+        return TypeDocument.get_display(self.type)
+
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"[{self.type}] {self.title}"
+        return f"[{self.get_type_display()}] {self.title}"

@@ -8,6 +8,8 @@
 import logging
 from dataclasses import dataclass, field
 
+from django.utils import timezone
+
 from apps.specialites.rules import niveau_accepte_specialite, niveau_est_tronc_commun
 from apps.users.models.user_models import User
 from apps.users.repositories.user_repository import UserRepository
@@ -15,9 +17,30 @@ from apps.users.repositories.etudiant_repository import (
     EtudiantRepository,
     BibliothecaireRepository,
 )
+from apps.users.repositories.personne_repository import PersonneExterneRepository
 from apps.history.models import HistoriqueActionService as HAS
 
 logger = logging.getLogger(__name__)
+
+
+def _build_validity_summary(profile) -> str:
+    date_debut = getattr(profile, 'date_debut_validite', None)
+    date_fin = getattr(profile, 'date_fin_validite', None)
+    compte_expire_le = getattr(profile, 'compte_expire_le', None)
+
+    if date_debut and date_fin:
+        debut = date_debut.strftime('%d/%m/%Y')
+        fin = date_fin.strftime('%d/%m/%Y')
+        if profile.est_expire:
+            return f"La periode configuree ({debut} au {fin}) est deja expiree."
+        if timezone.localdate() < date_debut:
+            return f"Le compte sera actif du {debut} au {fin}."
+        return f"Le compte est valable du {debut} au {fin}."
+
+    if compte_expire_le:
+        return f"Expire le {compte_expire_le.strftime('%d/%m/%Y')}."
+
+    return "Le compte est actif." if profile.user.is_active else "Le compte est inactif."
 
 
 @dataclass
@@ -184,6 +207,8 @@ class EtudiantCreationService:
             niveau            = niveau,
             specialite        = specialite,
             annee_inscription = data.get('annee_inscription'),
+            date_debut_validite = data.get('date_debut_validite'),
+            date_fin_validite = data.get('date_fin_validite'),
         )
 
         # ── Activer si demandé ────────────────────────────────────────────────
@@ -200,6 +225,14 @@ class EtudiantCreationService:
                 'niveau':      niveau.name if niveau else None,
                 'specialite':  str(specialite) if specialite else None,
                 'active':      data.get('activer_immediatement', False),
+                'date_debut_validite': (
+                    etudiant.date_debut_validite.isoformat()
+                    if etudiant.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    etudiant.date_fin_validite.isoformat()
+                    if etudiant.date_fin_validite else None
+                ),
             }
         )
 
@@ -208,8 +241,11 @@ class EtudiantCreationService:
             message=(
                 f"Compte étudiant créé avec succès. "
                 f"Matricule : {etudiant.matricule}. "
-                + ("Compte activé." if data.get('activer_immediatement') else
-                   "Compte inactif — activation manuelle requise.")
+                + (
+                    _build_validity_summary(etudiant)
+                    if data.get('activer_immediatement')
+                    else "Compte inactif - activation manuelle requise."
+                )
             ),
             data={
                 'etudiant_id':   str(etudiant.id),
@@ -219,6 +255,14 @@ class EtudiantCreationService:
                 'nom_complet':   user.get_full_name(),
                 'statut_compte': etudiant.statut_compte,
                 'jours_restants':etudiant.jours_restants,
+                'date_debut_validite': (
+                    etudiant.date_debut_validite.isoformat()
+                    if etudiant.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    etudiant.date_fin_validite.isoformat()
+                    if etudiant.date_fin_validite else None
+                ),
                 'compte_expire_le': (
                     etudiant.compte_expire_le.isoformat()
                     if etudiant.compte_expire_le else None
@@ -260,17 +304,20 @@ class EtudiantCreationService:
                     http_status=400
                 )
             EtudiantRepository.activer(etudiant, effectue_par=effectue_par)
-            msg = (
-                f"Compte de {etudiant.user.get_full_name()} activé. "
-                f"Expire le {etudiant.compte_expire_le.strftime('%d/%m/%Y')}."
-            )
+            msg = f"Compte de {etudiant.user.get_full_name()} activé. "
         else:  # reactiver
             EtudiantRepository.reactiver(etudiant, effectue_par=effectue_par)
             msg = (
                 f"Compte de {etudiant.user.get_full_name()} réactivé "
                 f"({etudiant.nb_reactivations}e réactivation). "
-                f"Expire le {etudiant.compte_expire_le.strftime('%d/%m/%Y')}."
             )
+
+        if etudiant.date_debut_validite and etudiant.date_fin_validite:
+            msg += _build_validity_summary(etudiant)
+        elif etudiant.compte_expire_le:
+            msg += f"Expire le {etudiant.compte_expire_le.strftime('%d/%m/%Y')}."
+        else:
+            msg += etudiant.statut_compte + "."
 
         HAS.log_utilisateur(
             action.upper(),
@@ -280,6 +327,14 @@ class EtudiantCreationService:
                 'action':          action,
                 'expire_le':       etudiant.compte_expire_le.isoformat(),
                 'nb_reactivations': etudiant.nb_reactivations,
+                'date_debut_validite': (
+                    etudiant.date_debut_validite.isoformat()
+                    if etudiant.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    etudiant.date_fin_validite.isoformat()
+                    if etudiant.date_fin_validite else None
+                ),
             }
         )
 
@@ -290,6 +345,14 @@ class EtudiantCreationService:
                 'matricule':       etudiant.matricule,
                 'statut_compte':   etudiant.statut_compte,
                 'jours_restants':  etudiant.jours_restants,
+                'date_debut_validite': (
+                    etudiant.date_debut_validite.isoformat()
+                    if etudiant.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    etudiant.date_fin_validite.isoformat()
+                    if etudiant.date_fin_validite else None
+                ),
                 'compte_active_le':etudiant.compte_active_le.isoformat(),
                 'compte_expire_le':etudiant.compte_expire_le.isoformat(),
                 'nb_reactivations':etudiant.nb_reactivations,
@@ -420,6 +483,113 @@ class BibliothecaireCreationService:
                         "avant de pouvoir se connecter."
                     )
                 }
+            },
+            http_status=201
+        )
+
+
+class PersonneExterneCreationService:
+    """
+    Logique metier pour la creation d'un compte personne externe.
+    """
+
+    @staticmethod
+    def creer_personne_externe(data: dict, effectue_par: User) -> ServiceResult:
+        if UserRepository.exists_by_email(data['email']):
+            return ServiceResult(
+                success=False,
+                message="Un compte avec cet email existe deja.",
+                errors={'email': ['Email deja utilise par un autre compte.']},
+                http_status=400
+            )
+
+        if UserRepository.exists_by_phone(data['phone']):
+            return ServiceResult(
+                success=False,
+                message="Un compte avec ce numero de telephone existe deja.",
+                errors={'phone': ['Telephone deja utilise par un autre compte.']},
+                http_status=400
+            )
+
+        user = UserRepository.create(
+            email=data['email'],
+            password=data['password'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            phone=data['phone'],
+            user_type='PERSONNE_EXTERNE',
+            date_of_birth=data.get('date_of_birth'),
+            is_active=True,
+        )
+
+        personne = PersonneExterneRepository.create(user=user)
+        profil_fields = {
+            'numero_piece': data.get('numero_piece', ''),
+            'profession': data.get('profession', ''),
+            'lieu_habitation': data.get('lieu_habitation', ''),
+            'date_debut_validite': data.get('date_debut_validite'),
+            'date_fin_validite': data.get('date_fin_validite'),
+        }
+        if data.get('date_debut_validite') and data.get('date_fin_validite'):
+            profil_fields['compte_active_le'] = timezone.now()
+            profil_fields['activation_suspendue'] = False
+
+        PersonneExterneRepository.update(personne, **profil_fields)
+        personne.refresh_from_db()
+
+        HAS.log_utilisateur(
+            'CREATION',
+            auteur=effectue_par,
+            cible_user=user,
+            details={
+                'profil_type': 'PERSONNE_EXTERNE',
+                'numero_piece': personne.numero_piece,
+                'profession': personne.profession,
+                'lieu_habitation': personne.lieu_habitation,
+                'date_debut_validite': (
+                    personne.date_debut_validite.isoformat()
+                    if personne.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    personne.date_fin_validite.isoformat()
+                    if personne.date_fin_validite else None
+                ),
+            }
+        )
+
+        return ServiceResult(
+            success=True,
+            message=(
+                f"Compte personne externe cree avec succes pour {user.get_full_name()}. "
+                + _build_validity_summary(personne)
+            ),
+            data={
+                'personne_externe_id': str(personne.id),
+                'user_id': str(user.id),
+                'email': user.email,
+                'nom_complet': user.get_full_name(),
+                'user_type': user.user_type,
+                'numero_piece': personne.numero_piece,
+                'profession': personne.profession,
+                'lieu_habitation': personne.lieu_habitation,
+                'statut_compte': personne.statut_compte,
+                'jours_restants': personne.jours_restants,
+                'date_debut_validite': (
+                    personne.date_debut_validite.isoformat()
+                    if personne.date_debut_validite else None
+                ),
+                'date_fin_validite': (
+                    personne.date_fin_validite.isoformat()
+                    if personne.date_fin_validite else None
+                ),
+                'compte_active_le': (
+                    personne.compte_active_le.isoformat()
+                    if personne.compte_active_le else None
+                ),
+                'compte_expire_le': (
+                    personne.compte_expire_le.isoformat()
+                    if personne.compte_expire_le else None
+                ),
             },
             http_status=201
         )

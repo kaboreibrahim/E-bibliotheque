@@ -15,7 +15,7 @@ from django.db import connection
 from django.db.models import Count, IntegerField, Q, Value
 from django.utils import timezone
 
-from apps.users.models import User, Etudiant, Bibliothecaire
+from apps.users.models import User, Etudiant, Bibliothecaire, PersonneExterne
 from apps.documents.models import ECUE, Document, Filiere, Niveau, TypeDocument, UE
 from apps.consultations.models import Consultation
 from apps.specialites.models import Specialite
@@ -76,7 +76,14 @@ class EtudiantInline(admin.StackedInline):
     fk_name        = 'user'
     can_delete     = False
     verbose_name   = "Profil Étudiant"
-    fields         = ('filiere', 'niveau', 'specialite', 'annee_inscription')
+    fields         = (
+        'filiere',
+        'niveau',
+        'specialite',
+        'annee_inscription',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
     autocomplete_fields = ('filiere', 'niveau', 'specialite')
     extra          = 0
 
@@ -89,6 +96,21 @@ class BibliothacaireInline(admin.StackedInline):
     fields         = ('badge_number', 'date_prise_poste',
                       'peut_gerer_documents', 'peut_gerer_utilisateurs')
     extra          = 0
+
+
+class PersonneExterneInline(admin.StackedInline):
+    """Profil personne externe affiche directement dans la fiche utilisateur."""
+    model = PersonneExterne
+    can_delete = False
+    verbose_name = "Profil Personne Externe"
+    fields = (
+        'numero_piece',
+        'profession',
+        'lieu_habitation',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
+    extra = 0
 
 
 @admin.register(User)
@@ -109,7 +131,7 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
     list_per_page  = 25
 
     # ── Inline profils ────────────────────────────────────────────────────────
-    inlines = [EtudiantInline, BibliothacaireInline]
+    inlines = [EtudiantInline, BibliothacaireInline, PersonneExterneInline]
 
     # ── Formulaire détail ─────────────────────────────────────────────────────
     fieldsets = (
@@ -197,12 +219,52 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
 
     @admin.action(description="✅ Activer les comptes sélectionnés")
     def activer_comptes(self, request, queryset):
-        nb = queryset.update(is_active=True)
+        nb = 0
+        for user in queryset.select_related(
+            'profil_etudiant',
+            'profil_personne_externe',
+        ):
+            if hasattr(user, 'profil_etudiant'):
+                profil = user.profil_etudiant
+                if profil.compte_active_le:
+                    profil.reactiver_compte(effectue_par=request.user)
+                else:
+                    profil.activer_compte(effectue_par=request.user)
+                nb += 1
+                continue
+
+            if hasattr(user, 'profil_personne_externe'):
+                user.profil_personne_externe.activer_compte()
+                nb += 1
+                continue
+
+            if not user.is_active:
+                user.is_active = True
+                user.save(update_fields=['is_active', 'updated_at'])
+                nb += 1
         self.message_user(request, f"{nb} compte(s) activé(s).")
 
     @admin.action(description="🚫 Désactiver les comptes sélectionnés")
     def desactiver_comptes(self, request, queryset):
-        nb = queryset.exclude(id=request.user.id).update(is_active=False)
+        nb = 0
+        for user in queryset.exclude(id=request.user.id).select_related(
+            'profil_etudiant',
+            'profil_personne_externe',
+        ):
+            if hasattr(user, 'profil_etudiant'):
+                user.profil_etudiant.desactiver_compte(manuel=True)
+                nb += 1
+                continue
+
+            if hasattr(user, 'profil_personne_externe'):
+                user.profil_personne_externe.desactiver_compte(manuel=True)
+                nb += 1
+                continue
+
+            if user.is_active:
+                user.is_active = False
+                user.save(update_fields=['is_active', 'updated_at'])
+                nb += 1
         self.message_user(request, f"{nb} compte(s) désactivé(s).")
 
 
@@ -213,8 +275,25 @@ class UserAdmin(BaseUserAdmin, ExportCsvMixin):
 @admin.register(Etudiant)
 class EtudiantAdmin(ExportCsvMixin, admin.ModelAdmin):
 
-    list_display  = ('user_email', 'user_nom', 'matricule', 'filiere', 'niveau', 'specialite', 'annee_inscription')
-    list_filter   = ('filiere', 'niveau', 'specialite', 'annee_inscription')
+    list_display  = (
+        'user_email',
+        'user_nom',
+        'matricule',
+        'filiere',
+        'niveau',
+        'specialite',
+        'annee_inscription',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
+    list_filter   = (
+        'filiere',
+        'niveau',
+        'specialite',
+        'annee_inscription',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
     search_fields = ('user__email', 'user__first_name', 'user__last_name', 'matricule', 'specialite__name')
     autocomplete_fields = ('user', 'filiere', 'niveau', 'specialite')
     list_select_related = ('user', 'filiere', 'niveau', 'specialite')
@@ -232,6 +311,33 @@ class EtudiantAdmin(ExportCsvMixin, admin.ModelAdmin):
     @admin.display(description="Matricule")
     def matricule(self, obj):
         return obj.matricule or "—"
+
+
+@admin.register(PersonneExterne)
+class PersonneExterneAdmin(ExportCsvMixin, admin.ModelAdmin):
+
+    list_display = (
+        'user_email',
+        'user_nom',
+        'numero_piece',
+        'profession',
+        'date_debut_validite',
+        'date_fin_validite',
+    )
+    list_filter = ('date_debut_validite', 'date_fin_validite')
+    search_fields = ('user__email', 'user__first_name', 'user__last_name', 'numero_piece', 'profession')
+    autocomplete_fields = ('user',)
+    list_select_related = ('user',)
+    ordering = ('user__last_name',)
+    list_per_page = 25
+
+    @admin.display(description="Email", ordering='user__email')
+    def user_email(self, obj):
+        return obj.user.email
+
+    @admin.display(description="Nom complet", ordering='user__last_name')
+    def user_nom(self, obj):
+        return obj.user.get_full_name()
 
 
 # =============================================================================
@@ -286,7 +392,7 @@ class FiliereAdmin(admin.ModelAdmin):
     list_per_page  = 20
 
     def get_queryset(self, request):
-        return super().get_queryset(request).annotate(
+        return super().get_queryset(request).prefetch_related('specialites').annotate(
             _nb_niveaux   = Count('niveaux', distinct=True),
             _nb_etudiants = Count('etudiants', distinct=True),
         )
@@ -314,7 +420,7 @@ class NiveauAdmin(admin.ModelAdmin):
     list_per_page  = 25
 
     def get_queryset(self, request):
-        return super().get_queryset(request).annotate(
+        return super().get_queryset(request).prefetch_related('specialites').annotate(
             _nb_specialites = Count('specialites', distinct=True),
             _nb_etudiants = Count('etudiants', distinct=True),
             _nb_documents = Count('documents', distinct=True),
@@ -376,9 +482,9 @@ class ECUEInline(admin.TabularInline):
 @admin.register(UE)
 class UEAdmin(admin.ModelAdmin):
 
-    list_display   = ('code', 'name', 'coef', 'nb_ecues', 'nb_documents', 'niveaux_list')
+    list_display   = ('code', 'name', 'coef', 'nb_ecues', 'nb_documents', 'specialites_list')
     search_fields  = ('code', 'name')
-    filter_horizontal = ('niveaux',)
+    filter_horizontal = ('specialites',)
     readonly_fields = ('coef',)
     inlines = [ECUEInline]
     list_per_page  = 25
@@ -401,12 +507,12 @@ class UEAdmin(admin.ModelAdmin):
     def nb_documents(self, obj):
         return obj._nb_documents
 
-    @admin.display(description="Niveaux")
-    def niveaux_list(self, obj):
-        niveaux = obj.niveaux.all()[:3]
-        noms    = ", ".join(str(n) for n in niveaux)
-        if obj.niveaux.count() > 3:
-            noms += f" +{obj.niveaux.count() - 3}"
+    @admin.display(description="Specialites")
+    def specialites_list(self, obj):
+        specialites = obj.specialites.all()[:3]
+        noms    = ", ".join(str(s) for s in specialites)
+        if obj.specialites.count() > 3:
+            noms += f" +{obj.specialites.count() - 3}"
         return noms or "—"
 
 
@@ -424,6 +530,22 @@ class ECUEAdmin(admin.ModelAdmin):
     ordering = ('ue__code', 'code')
 
 
+@admin.register(TypeDocument)
+class TypeDocumentAdmin(admin.ModelAdmin):
+
+    list_display = ('code', 'name', 'nb_documents', 'created_at', 'updated_at')
+    search_fields = ('code', 'name')
+    ordering = ('name',)
+    list_per_page = 25
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(_nb_documents=Count('documents', distinct=True))
+
+    @admin.display(description="Documents", ordering='_nb_documents')
+    def nb_documents(self, obj):
+        return obj._nb_documents
+
+
 @admin.register(Document)
 class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
 
@@ -434,14 +556,14 @@ class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
     list_filter    = ('type', 'annee_academique_debut', 'filiere', 'niveau', 'specialite', 'ue', 'created_at')
     search_fields  = ('title', 'auteur', 'encadreur', 'description', 'specialite__name', 'ue__code', 'ue__name')
     autocomplete_fields = ('filiere', 'niveau', 'specialite', 'ue', 'ajoute_par')
-    list_select_related = ('filiere', 'niveau', 'specialite', 'ue', 'ajoute_par')
+    list_select_related = ('type', 'filiere', 'niveau', 'specialite', 'ue', 'ajoute_par')
     date_hierarchy = 'created_at'
     ordering       = ('-annee_academique_debut', '-created_at')
     list_per_page  = 20
 
     fieldsets = (
         (_("📋 Informations générales"), {
-            'fields': ('title', 'type', 'annee_academique_debut', 'description', 'file_path')
+            'fields': ('title', 'type', 'annee_academique_debut', 'description', 'file_name', 'file_mime_type', 'file_base64')
         }),
         (_("🏫 Classification"), {
             'fields': ('filiere', 'niveau', 'specialite', 'ue')
@@ -486,7 +608,7 @@ class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
             'THESE':   '#dc3545',
             'COURS':   '#007bff',
         }
-        color = colors.get(obj.type, '#6c757d')
+        color = colors.get(obj.type_code, '#6c757d')
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;'
             'border-radius:10px;font-size:11px;">{}</span>',
@@ -499,7 +621,7 @@ class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
 
     @admin.display(description="Auteur / Sujet")
     def auteur_ou_encadreur(self, obj):
-        if obj.type in {TypeDocument.MEMOIRE, TypeDocument.THESE}:
+        if TypeDocument.requires_auteur(obj.type):
             return obj.auteur or "—"
         return obj.encadreur or "—"
 
@@ -657,7 +779,7 @@ class FavoriAdmin(admin.ModelAdmin):
     date_hierarchy  = 'created_at'
     ordering        = ('-created_at',)
     list_per_page   = 30
-    list_select_related = ('etudiant__user', 'document__ue', 'document__filiere')
+    list_select_related = ('etudiant__user', 'document__type', 'document__ue', 'document__filiere')
 
     # ── Formulaire détail ─────────────────────────────────────────────────────
     fieldsets = (
@@ -693,7 +815,7 @@ class FavoriAdmin(admin.ModelAdmin):
             'THESE':   '#dc3545',
             'COURS':   '#007bff',
         }
-        color = colors.get(obj.document.type, '#6c757d')
+        color = colors.get(obj.document.type_code, '#6c757d')
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;'
             'border-radius:10px;font-size:11px;font-weight:bold;">{}</span>',
@@ -750,7 +872,7 @@ class FavoriAdmin(admin.ModelAdmin):
         # Top 5 documents les plus mis en favoris
         top_docs = (
             Favori.objects
-            .values('document__title', 'document__type')
+            .values('document__title', 'document__type__name')
             .annotate(nb=Count('id'))
             .order_by('-nb')[:5]
         )

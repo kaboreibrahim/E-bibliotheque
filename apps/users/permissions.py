@@ -87,18 +87,18 @@ class IsOwnerOrAdminOrBibliothecaire(BasePermission):
 
 class Is2FAVerified(BasePermission):
     """
-    Vérifie que le 2FA a été validé pour Admin et Bibliothécaire.
-    Pour les étudiants, pas de 2FA obligatoire.
+    Vérifie que le 2FA a été validé pour les rôles qui l'exigent.
+    Les étudiants restent tolérés ici car leur accès est déjà filtré au login.
     """
     message = "Vous devez valider votre code Google Authenticator (2FA)."
 
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
-        # Étudiant → pas de 2FA obligatoire
+        # Étudiant → déjà filtré par le flux de connexion en 2 étapes
         if request.user.user_type == 'ETUDIANT':
             return True
-        # Admin/Biblio → 2FA obligatoire
+        # Autres rôles protégés → 2FA obligatoire
         if request.user.requires_2fa and not request.user.is_2fa_enabled:
             return False
         return True
