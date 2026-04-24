@@ -10,11 +10,9 @@ from django.db import models
 from django.db.models import Sum
 from safedelete.models import SOFT_DELETE_CASCADE, SafeDeleteModel
 
-from apps.niveau.models import Niveau
-
 
 class UE(SafeDeleteModel):
-    """Unite d'enseignement rattachee a un ou plusieurs niveaux."""
+    """Unite d'enseignement rattachee a une ou plusieurs specialites."""
 
     _safedelete_policy = SOFT_DELETE_CASCADE
 
@@ -29,11 +27,11 @@ class UE(SafeDeleteModel):
         verbose_name="Coefficient",
         help_text="Coefficient total de l'UE, calcule a partir des ECUE.",
     )
-    niveaux = models.ManyToManyField(
-        Niveau,
+    specialites = models.ManyToManyField(
+        "specialites.Specialite",
         related_name="ues",
         blank=True,
-        verbose_name="Niveaux concernes",
+        verbose_name="Specialites concernees",
     )
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -22,9 +22,10 @@ class Document(DocumentUE, SafeDeleteModel):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255, verbose_name="Titre")
-    type = models.CharField(
-        max_length=20,
-        choices=TypeDocument.choices,
+    type = models.ForeignKey(
+        TypeDocument,
+        on_delete=models.PROTECT,
+        related_name="documents",
         verbose_name="Type de document",
     )
     file_base64 = models.TextField(
@@ -68,6 +69,9 @@ class Document(DocumentUE, SafeDeleteModel):
         return build_document_data_uri(self.file_base64, self.file_mime_type)
 
     def clean(self):
+        if not self.type_id:
+            raise ValidationError({"type": "Le type de document est obligatoire."})
+
         super().clean()
 
         if not self.file_base64:
@@ -84,9 +88,16 @@ class Document(DocumentUE, SafeDeleteModel):
         if not self.file_name:
             self.file_name = build_document_file_name(self.title, self.file_mime_type)
 
+    @property
+    def type_code(self) -> str:
+        return TypeDocument.get_code(self.type)
+
+    def get_type_display(self) -> str:
+        return TypeDocument.get_display(self.type)
+
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"[{self.type}] {self.title}"
+        return f"[{self.get_type_display()}] {self.title}"

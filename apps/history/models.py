@@ -232,7 +232,7 @@ class HistoriqueActionService:
         payload = {
             "document_id": str(getattr(document, "id", "")) or None,
             "document_titre": getattr(document, "title", None),
-            "document_type": getattr(document, "type", None),
+            "document_type": getattr(document, "type_code", None),
         }
         if details:
             payload.update(details)

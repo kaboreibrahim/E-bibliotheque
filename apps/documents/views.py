@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.db.models import Count
 from drf_spectacular.utils import (
     OpenApiExample,
     OpenApiParameter,
@@ -22,11 +23,26 @@ from apps.documents.serializers import (
     DocumentCreateSerializer,
     DocumentOpenResponseSerializer,
     DocumentSerializer,
+    TypeDocumentSerializer,
 )
 from apps.documents.services import DocumentService
 
 _consultation_service = ConsultationService()
 _service = DocumentService(consultation_service=_consultation_service)
+
+TYPE_DOCUMENT_RESPONSE_EXAMPLE = OpenApiExample(
+    "Reponse type de document",
+    response_only=True,
+    status_codes=["200", "201"],
+    value={
+        "id": "12121212-1212-1212-1212-121212121212",
+        "code": "COURS",
+        "name": "Cours",
+        "nb_documents": 8,
+        "created_at": "2026-04-03T09:30:00Z",
+        "updated_at": "2026-04-03T09:30:00Z",
+    },
+)
 
 DOCUMENT_ID_PARAMETER = OpenApiParameter(
     name="id",
@@ -38,10 +54,9 @@ DOCUMENT_ID_PARAMETER = OpenApiParameter(
 DOCUMENT_LIST_PARAMETERS = [
     OpenApiParameter(
         name="type",
-        description="Filtrer par type de document.",
+        description="Filtrer par code de type de document. Exemples : COURS, MEMOIRE, RAPPORT.",
         required=False,
         type=str,
-        enum=[choice[0] for choice in TypeDocument.choices],
     ),
     OpenApiParameter(
         name="filiere",
@@ -104,6 +119,11 @@ DOCUMENT_LIST_EXAMPLE = OpenApiExample(
             "title": "Cours de procedure civile",
             "type": "COURS",
             "type_display": "Cours",
+            "type_detail": {
+                "id": "12121212-1212-1212-1212-121212121212",
+                "code": "COURS",
+                "name": "Cours",
+            },
             "description": "Support du semestre 1",
             "file_name": "procedure-civile.pdf",
             "file_mime_type": "application/pdf",
@@ -178,6 +198,11 @@ DOCUMENT_RESPONSE_EXAMPLE = OpenApiExample(
         "title": "Sujet d examen droit civil",
         "type": "EXAMEN",
         "type_display": "Examen",
+        "type_detail": {
+            "id": "34343434-3434-3434-3434-343434343434",
+            "code": "EXAMEN",
+            "name": "Examen",
+        },
         "description": "Session normale 2025",
         "file_name": "examen-droit-civil.pdf",
         "file_mime_type": "application/pdf",
@@ -249,6 +274,74 @@ def _get_client_ip(request) -> str | None:
 
 def _get_user_agent(request) -> str:
     return request.META.get("HTTP_USER_AGENT", "")[:500]
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="Lister les types de documents",
+        tags=["Types de documents"],
+        responses={
+            200: OpenApiResponse(
+                response=TypeDocumentSerializer(many=True),
+                description="Liste des types de documents.",
+            ),
+        },
+        examples=[TYPE_DOCUMENT_RESPONSE_EXAMPLE],
+    ),
+    create=extend_schema(
+        summary="Creer un type de document",
+        tags=["Types de documents"],
+        request=TypeDocumentSerializer,
+        responses={
+            201: OpenApiResponse(
+                response=TypeDocumentSerializer,
+                description="Type de document cree.",
+            ),
+            400: OpenApiResponse(description="Donnees invalides."),
+            403: OpenApiResponse(description="Permission insuffisante."),
+        },
+        examples=[
+            OpenApiExample(
+                "Payload creation type",
+                request_only=True,
+                value={"code": "RAPPORT", "name": "Rapport"},
+            ),
+            TYPE_DOCUMENT_RESPONSE_EXAMPLE,
+        ],
+    ),
+    retrieve=extend_schema(
+        summary="Detail d'un type de document",
+        tags=["Types de documents"],
+        responses={
+            200: OpenApiResponse(
+                response=TypeDocumentSerializer,
+                description="Detail d'un type de document.",
+            ),
+            404: OpenApiResponse(description="Type de document introuvable."),
+        },
+        examples=[TYPE_DOCUMENT_RESPONSE_EXAMPLE],
+    ),
+    update=extend_schema(tags=["Types de documents"]),
+    partial_update=extend_schema(tags=["Types de documents"]),
+    destroy=extend_schema(tags=["Types de documents"]),
+)
+class TypeDocumentViewSet(viewsets.ModelViewSet):
+    serializer_class = TypeDocumentSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+    queryset = TypeDocument.objects.all()
+
+    def get_permissions(self):
+        if self.action in {"create", "update", "partial_update", "destroy"}:
+            return [IsAuthenticated(), CanManageDocuments()]
+        return [IsAuthenticated()]
+
+    def get_queryset(self):
+        return (
+            TypeDocument.objects
+            .annotate(_nb_documents=Count("documents", distinct=True))
+            .order_by("name")
+        )
 
 
 @extend_schema_view(

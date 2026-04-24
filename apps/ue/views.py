@@ -18,11 +18,11 @@ from rest_framework.response import Response
 from apps.ue.serializers import ECUESerializer, UESerializer
 from apps.ue.services import ECUEService, UEService
 
-_ue_service   = UEService()
+_ue_service = UEService()
 _ecue_service = ECUEService()
 
 UE_LIST_EXAMPLE = OpenApiExample(
-    "Réponse liste des UE",
+    "Reponse liste des UE",
     response_only=True,
     status_codes=["200"],
     value=[
@@ -32,13 +32,23 @@ UE_LIST_EXAMPLE = OpenApiExample(
             "name": "Droit civil des obligations",
             "coef": "5.00",
             "coef_total": "5.00",
-            "niveaux_detail": [
-                {"id": "33333333-3333-3333-3333-333333333333", "name": "L1"},
-                {"id": "44444444-4444-4444-4444-444444444444", "name": "L2"},
+            "specialites_detail": [
+                {"id": "33333333-3333-3333-3333-333333333333", "name": "Droit prive"},
+                {"id": "44444444-4444-4444-4444-444444444444", "name": "Droit public"},
             ],
             "ecues": [
-                {"id": "77777777-7777-7777-7777-777777777777", "code": "ECUE-DR-CIV-01", "name": "Introduction", "coef": "2.00"},
-                {"id": "88888888-8888-8888-8888-888888888888", "code": "ECUE-DR-CIV-02", "name": "Approfondissement", "coef": "3.00"},
+                {
+                    "id": "77777777-7777-7777-7777-777777777777",
+                    "code": "ECUE-DR-CIV-01",
+                    "name": "Introduction",
+                    "coef": "2.00",
+                },
+                {
+                    "id": "88888888-8888-8888-8888-888888888888",
+                    "code": "ECUE-DR-CIV-02",
+                    "name": "Approfondissement",
+                    "coef": "3.00",
+                },
             ],
             "created_at": "2026-04-03T12:00:00Z",
         }
@@ -46,12 +56,12 @@ UE_LIST_EXAMPLE = OpenApiExample(
 )
 
 UE_CREATE_REQUEST_EXAMPLE = OpenApiExample(
-    "Payload création UE",
+    "Payload creation UE",
     request_only=True,
     value={
         "code": "UE-DR-CIV-01",
         "name": "Droit civil des obligations",
-        "niveaux": [
+        "specialites": [
             "33333333-3333-3333-3333-333333333333",
             "44444444-4444-4444-4444-444444444444",
         ],
@@ -59,7 +69,7 @@ UE_CREATE_REQUEST_EXAMPLE = OpenApiExample(
 )
 
 UE_RESPONSE_EXAMPLE = OpenApiExample(
-    "Réponse UE",
+    "Reponse UE",
     response_only=True,
     status_codes=["200", "201"],
     value={
@@ -68,9 +78,9 @@ UE_RESPONSE_EXAMPLE = OpenApiExample(
         "name": "Droit civil des obligations",
         "coef": "0.00",
         "coef_total": "0.00",
-        "niveaux_detail": [
-            {"id": "33333333-3333-3333-3333-333333333333", "name": "L1"},
-            {"id": "44444444-4444-4444-4444-444444444444", "name": "L2"},
+        "specialites_detail": [
+            {"id": "33333333-3333-3333-3333-333333333333", "name": "Droit prive"},
+            {"id": "44444444-4444-4444-4444-444444444444", "name": "Droit public"},
         ],
         "ecues": [],
         "created_at": "2026-04-03T12:00:00Z",
@@ -78,7 +88,7 @@ UE_RESPONSE_EXAMPLE = OpenApiExample(
 )
 
 ECUE_LIST_EXAMPLE = OpenApiExample(
-    "Réponse liste des ECUE",
+    "Reponse liste des ECUE",
     response_only=True,
     status_codes=["200"],
     value=[
@@ -95,7 +105,7 @@ ECUE_LIST_EXAMPLE = OpenApiExample(
 )
 
 ECUE_CREATE_REQUEST_EXAMPLE = OpenApiExample(
-    "Payload création ECUE",
+    "Payload creation ECUE",
     request_only=True,
     value={
         "ue": "66666666-6666-6666-6666-666666666666",
@@ -106,7 +116,7 @@ ECUE_CREATE_REQUEST_EXAMPLE = OpenApiExample(
 )
 
 ECUE_RESPONSE_EXAMPLE = OpenApiExample(
-    "Réponse ECUE",
+    "Reponse ECUE",
     response_only=True,
     status_codes=["200", "201"],
     value={
@@ -139,13 +149,24 @@ ECUE_ID_PARAMETER = OpenApiParameter(
 # UE
 # =============================================================================
 
+
 @extend_schema_view(
     list=extend_schema(
         summary="Lister les UE",
         tags=["UE"],
         parameters=[
-            OpenApiParameter(name="niveau", description="Filtrer par UUID de niveau", required=False, type=OpenApiTypes.UUID),
-            OpenApiParameter(name="q",      description="Recherche code / intitulé",  required=False, type=str),
+            OpenApiParameter(
+                name="specialite",
+                description="Filtrer par UUID de specialite",
+                required=False,
+                type=OpenApiTypes.UUID,
+            ),
+            OpenApiParameter(
+                name="q",
+                description="Recherche code / intitule",
+                required=False,
+                type=str,
+            ),
         ],
         responses={
             200: OpenApiResponse(response=UESerializer(many=True), description="Liste des UE"),
@@ -153,21 +174,21 @@ ECUE_ID_PARAMETER = OpenApiParameter(
         examples=[UE_LIST_EXAMPLE],
     ),
     create=extend_schema(
-        summary="Créer une UE",
+        summary="Creer une UE",
         tags=["UE"],
         request=UESerializer,
         responses={
-            201: OpenApiResponse(response=UESerializer, description="UE créée"),
-            400: OpenApiResponse(description="Données invalides"),
+            201: OpenApiResponse(response=UESerializer, description="UE creee"),
+            400: OpenApiResponse(description="Donnees invalides"),
         },
         examples=[UE_CREATE_REQUEST_EXAMPLE, UE_RESPONSE_EXAMPLE],
     ),
     retrieve=extend_schema(
-        summary="Détail d'une UE",
+        summary="Detail d'une UE",
         tags=["UE"],
         parameters=[UE_ID_PARAMETER],
         responses={
-            200: OpenApiResponse(response=UESerializer, description="Détail complet de l'UE"),
+            200: OpenApiResponse(response=UESerializer, description="Detail complet de l'UE"),
             404: OpenApiResponse(description="UE introuvable"),
         },
         examples=[UE_RESPONSE_EXAMPLE],
@@ -178,8 +199,8 @@ ECUE_ID_PARAMETER = OpenApiParameter(
         parameters=[UE_ID_PARAMETER],
         request=UESerializer,
         responses={
-            200: OpenApiResponse(response=UESerializer, description="UE mise à jour"),
-            400: OpenApiResponse(description="Données invalides"),
+            200: OpenApiResponse(response=UESerializer, description="UE mise a jour"),
+            400: OpenApiResponse(description="Donnees invalides"),
         },
         examples=[UE_CREATE_REQUEST_EXAMPLE, UE_RESPONSE_EXAMPLE],
     ),
@@ -189,11 +210,18 @@ ECUE_ID_PARAMETER = OpenApiParameter(
         parameters=[UE_ID_PARAMETER],
         request=UESerializer,
         responses={
-            200: OpenApiResponse(response=UESerializer, description="UE mise à jour partiellement"),
-            400: OpenApiResponse(description="Données invalides"),
+            200: OpenApiResponse(
+                response=UESerializer,
+                description="UE mise a jour partiellement",
+            ),
+            400: OpenApiResponse(description="Donnees invalides"),
         },
         examples=[
-            OpenApiExample("Payload patch UE", request_only=True, value={"name": "Droit civil spécial"}),
+            OpenApiExample(
+                "Payload patch UE",
+                request_only=True,
+                value={"name": "Droit civil special"},
+            ),
             UE_RESPONSE_EXAMPLE,
         ],
     ),
@@ -201,16 +229,16 @@ ECUE_ID_PARAMETER = OpenApiParameter(
         summary="Supprimer une UE (soft)",
         tags=["UE"],
         parameters=[UE_ID_PARAMETER],
-        responses={204: OpenApiResponse(description="UE supprimée")},
+        responses={204: OpenApiResponse(description="UE supprimee")},
     ),
 )
 class UEViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request):
-        niveau_id = request.query_params.get("niveau")
-        q         = request.query_params.get("q", "").strip()
-        qs = _ue_service.list_ues(niveau_id=niveau_id, q=q or None)
+        specialite_id = request.query_params.get("specialite")
+        q = request.query_params.get("q", "").strip()
+        qs = _ue_service.list_ues(specialite_id=specialite_id, q=q or None)
         return Response(UESerializer(qs, many=True).data)
 
     def create(self, request):
@@ -221,7 +249,7 @@ class UEViewSet(viewsets.ViewSet):
             ue = _ue_service.create_ue(
                 code=vd["code"],
                 name=vd["name"],
-                niveau_ids=[str(uid) for uid in vd.get("niveaux", [])],
+                specialite_ids=[str(uid) for uid in vd.get("specialites", [])],
             )
         except ValidationError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
@@ -241,7 +269,7 @@ class UEViewSet(viewsets.ViewSet):
         update_fields = {
             "code": vd["code"],
             "name": vd["name"],
-            "niveau_ids": [str(uid) for uid in vd.get("niveaux", [])],
+            "specialite_ids": [str(uid) for uid in vd.get("specialites", [])],
         }
         try:
             ue = _ue_service.update_ue(pk, **update_fields)
@@ -258,8 +286,8 @@ class UEViewSet(viewsets.ViewSet):
             update_fields["code"] = vd["code"]
         if "name" in vd:
             update_fields["name"] = vd["name"]
-        if "niveaux" in vd:
-            update_fields["niveau_ids"] = [str(uid) for uid in vd["niveaux"]]
+        if "specialites" in vd:
+            update_fields["specialite_ids"] = [str(uid) for uid in vd["specialites"]]
         try:
             ue = _ue_service.update_ue(pk, **update_fields) if update_fields else _ue_service.get_ue(pk)
         except ValidationError as exc:
@@ -273,13 +301,15 @@ class UEViewSet(viewsets.ViewSet):
             return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    # ── Nested : /ues/{id}/ecues/ ─────────────────────────────────────────────
     @extend_schema(
         summary="ECUE d'une UE",
         tags=["UE"],
         parameters=[UE_ID_PARAMETER],
         responses={
-            200: OpenApiResponse(response=ECUESerializer(many=True), description="Liste des ECUE de l'UE"),
+            200: OpenApiResponse(
+                response=ECUESerializer(many=True),
+                description="Liste des ECUE de l'UE",
+            ),
         },
         examples=[ECUE_LIST_EXAMPLE],
     )
@@ -293,12 +323,18 @@ class UEViewSet(viewsets.ViewSet):
 # ECUE
 # =============================================================================
 
+
 @extend_schema_view(
     list=extend_schema(
         summary="Lister les ECUE",
         tags=["ECUE"],
         parameters=[
-            OpenApiParameter(name="ue", description="Filtrer par UUID d'UE", required=False, type=OpenApiTypes.UUID),
+            OpenApiParameter(
+                name="ue",
+                description="Filtrer par UUID d'UE",
+                required=False,
+                type=OpenApiTypes.UUID,
+            ),
         ],
         responses={
             200: OpenApiResponse(response=ECUESerializer(many=True), description="Liste des ECUE"),
@@ -306,21 +342,21 @@ class UEViewSet(viewsets.ViewSet):
         examples=[ECUE_LIST_EXAMPLE],
     ),
     create=extend_schema(
-        summary="Créer un ECUE",
+        summary="Creer un ECUE",
         tags=["ECUE"],
         request=ECUESerializer,
         responses={
-            201: OpenApiResponse(response=ECUESerializer, description="ECUE créé"),
-            400: OpenApiResponse(description="Données invalides"),
+            201: OpenApiResponse(response=ECUESerializer, description="ECUE cree"),
+            400: OpenApiResponse(description="Donnees invalides"),
         },
         examples=[ECUE_CREATE_REQUEST_EXAMPLE, ECUE_RESPONSE_EXAMPLE],
     ),
     retrieve=extend_schema(
-        summary="Détail d'un ECUE",
+        summary="Detail d'un ECUE",
         tags=["ECUE"],
         parameters=[ECUE_ID_PARAMETER],
         responses={
-            200: OpenApiResponse(response=ECUESerializer, description="Détail complet de l'ECUE"),
+            200: OpenApiResponse(response=ECUESerializer, description="Detail complet de l'ECUE"),
             404: OpenApiResponse(description="ECUE introuvable"),
         },
         examples=[ECUE_RESPONSE_EXAMPLE],
@@ -331,8 +367,8 @@ class UEViewSet(viewsets.ViewSet):
         parameters=[ECUE_ID_PARAMETER],
         request=ECUESerializer,
         responses={
-            200: OpenApiResponse(response=ECUESerializer, description="ECUE mis à jour"),
-            400: OpenApiResponse(description="Données invalides"),
+            200: OpenApiResponse(response=ECUESerializer, description="ECUE mis a jour"),
+            400: OpenApiResponse(description="Donnees invalides"),
         },
         examples=[ECUE_CREATE_REQUEST_EXAMPLE, ECUE_RESPONSE_EXAMPLE],
     ),
@@ -342,8 +378,11 @@ class UEViewSet(viewsets.ViewSet):
         parameters=[ECUE_ID_PARAMETER],
         request=ECUESerializer,
         responses={
-            200: OpenApiResponse(response=ECUESerializer, description="ECUE mis à jour partiellement"),
-            400: OpenApiResponse(description="Données invalides"),
+            200: OpenApiResponse(
+                response=ECUESerializer,
+                description="ECUE mis a jour partiellement",
+            ),
+            400: OpenApiResponse(description="Donnees invalides"),
         },
         examples=[
             OpenApiExample("Payload patch ECUE", request_only=True, value={"coef": "3.00"}),
@@ -354,7 +393,7 @@ class UEViewSet(viewsets.ViewSet):
         summary="Supprimer un ECUE (soft)",
         tags=["ECUE"],
         parameters=[ECUE_ID_PARAMETER],
-        responses={204: OpenApiResponse(description="ECUE supprimé")},
+        responses={204: OpenApiResponse(description="ECUE supprime")},
     ),
 )
 class ECUEViewSet(viewsets.ViewSet):
@@ -393,7 +432,10 @@ class ECUEViewSet(viewsets.ViewSet):
         vd = serializer.validated_data
         try:
             ecue = _ecue_service.update_ecue(
-                pk, code=vd["code"], name=vd["name"], coef=vd["coef"]
+                pk,
+                code=vd["code"],
+                name=vd["name"],
+                coef=vd["coef"],
             )
         except ValidationError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
@@ -403,7 +445,7 @@ class ECUEViewSet(viewsets.ViewSet):
         serializer = ECUESerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         vd = serializer.validated_data
-        update_fields = {k: v for k, v in vd.items() if k != "ue"}
+        update_fields = {key: value for key, value in vd.items() if key != "ue"}
         try:
             ecue = _ecue_service.update_ecue(pk, **update_fields) if update_fields else _ecue_service.get_ecue(pk)
         except ValidationError as exc:

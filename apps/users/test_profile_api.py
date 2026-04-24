@@ -44,6 +44,10 @@ class CurrentUserProfileApiTests(APITestCase):
             name='Reseaux',
             niveau=self.niveau,
         )
+        self.type_cours, _ = TypeDocument.objects.get_or_create(
+            code=TypeDocument.COURS,
+            defaults={"name": "Cours"},
+        )
 
     def _create_etudiant(self):
         user = User.objects.create_user(
@@ -112,7 +116,7 @@ class CurrentUserProfileApiTests(APITestCase):
     def _create_document(self, title: str) -> Document:
         return Document.objects.create(
             title=title,
-            type=TypeDocument.COURS,
+            type=self.type_cours,
             file_base64=self._build_base64_document(title.encode('utf-8')),
             file_name=f"{title.lower().replace(' ', '-')}.pdf",
             file_mime_type='application/pdf',

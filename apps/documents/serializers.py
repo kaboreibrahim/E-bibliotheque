@@ -3,8 +3,7 @@ from collections.abc import Mapping
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from apps.documents.models import Document
-from apps.documents.models.document_type_models import TypeDocument
+from apps.documents.models import Document, TypeDocument
 from apps.documents.utils import (
     DEFAULT_DOCUMENT_MIME_TYPE,
     build_document_file_name,
@@ -47,10 +46,36 @@ class _DocumentECUEMinimalSerializer(serializers.Serializer):
     name = serializers.CharField()
 
 
+class TypeDocumentMinimalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TypeDocument
+        fields = ["id", "code", "name"]
+
+
+class TypeDocumentSerializer(serializers.ModelSerializer):
+    nb_documents = serializers.IntegerField(source="_nb_documents", read_only=True)
+
+    class Meta:
+        model = TypeDocument
+        fields = ["id", "code", "name", "nb_documents", "created_at", "updated_at"]
+        read_only_fields = ["id", "nb_documents", "created_at", "updated_at"]
+
+    def validate_code(self, value: str) -> str:
+        normalized = TypeDocument.normalize_code(value)
+        if not normalized:
+            raise serializers.ValidationError("Le code du type de document est obligatoire.")
+        return normalized
+
+    def validate_name(self, value: str) -> str:
+        return value.strip()
+
+
 class DocumentSerializer(serializers.ModelSerializer):
+    type = serializers.CharField(source="type.code", read_only=True)
     file_base64 = serializers.SerializerMethodField()
     file_data_uri = serializers.SerializerMethodField()
     type_display = serializers.CharField(source="get_type_display", read_only=True)
+    type_detail = TypeDocumentMinimalSerializer(source="type", read_only=True)
     annee_academique = serializers.CharField(read_only=True)
     auteur_ou_encadreur = serializers.SerializerMethodField()
     nb_consultations = serializers.IntegerField(source="_nb_consultations", read_only=True)
@@ -69,6 +94,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "title",
             "type",
             "type_display",
+            "type_detail",
             "description",
             "file_name",
             "file_mime_type",
@@ -110,7 +136,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         return obj.file_data_uri
 
     def get_auteur_ou_encadreur(self, obj) -> str:
-        if obj.type in {TypeDocument.MEMOIRE, TypeDocument.THESE}:
+        if TypeDocument.requires_auteur(obj.type):
             return obj.auteur or ""
         return obj.encadreur or ""
 
@@ -120,9 +146,12 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
         max_length=255,
         help_text="Titre du document.",
     )
-    type = serializers.ChoiceField(
-        choices=TypeDocument.choices,
-        help_text="Type du document : COURS, EXAMEN, MEMOIRE ou THESE.",
+    type = serializers.CharField(
+        max_length=100,
+        help_text=(
+            "Code d'un type de document existant. Exemples : COURS, EXAMEN, "
+            "MEMOIRE ou THESE."
+        ),
     )
     file_path = serializers.FileField(
         required=False,
@@ -207,6 +236,17 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             "auteur",
             "encadreur",
         ]
+
+    def validate_type(self, value: str) -> str:
+        normalized = TypeDocument.normalize_code(value)
+        if not normalized:
+            raise serializers.ValidationError("Le type de document est obligatoire.")
+        type_document = TypeDocument.objects.filter(code=normalized).first()
+        if not type_document:
+            raise serializers.ValidationError(
+                "Type de document introuvable. Creez-le d'abord dans la liste des types."
+            )
+        return type_document
 
     def validate(self, attrs):
         upload = attrs.pop("file_path", None)

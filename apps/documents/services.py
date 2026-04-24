@@ -27,7 +27,7 @@ class DocumentService:
         self.consultation_service = consultation_service or ConsultationService()
 
     @staticmethod
-    def _get_allowed_level_names_for_user(user) -> list[str] | None:
+    def _get_student_document_scope(user) -> dict[str, object] | None:
         if not user or not getattr(user, "is_authenticated", False):
             return None
 
@@ -39,16 +39,31 @@ class DocumentService:
         except AttributeError:
             return []
 
+        filiere_id = getattr(profil_etudiant, "filiere_id", None)
         niveau = getattr(profil_etudiant, "niveau", None)
+        specialite = getattr(profil_etudiant, "specialite", None)
         niveau_name = getattr(niveau, "name", None)
-        if not niveau_name:
-            return []
+        specialite_name = getattr(specialite, "name", None)
+        if not filiere_id or not niveau_name or not specialite_name:
+            return {
+                "allowed_level_names": [],
+                "allowed_filiere_id": filiere_id,
+                "allowed_specialite_name": specialite_name,
+            }
 
         max_rank = DOCUMENT_LEVEL_RANKS.get(niveau_name)
         if max_rank is None:
-            return []
+            return {
+                "allowed_level_names": [],
+                "allowed_filiere_id": filiere_id,
+                "allowed_specialite_name": specialite_name,
+            }
 
-        return list(DOCUMENT_LEVEL_ORDER[: max_rank + 1])
+        return {
+            "allowed_level_names": list(DOCUMENT_LEVEL_ORDER[: max_rank + 1]),
+            "allowed_filiere_id": filiere_id,
+            "allowed_specialite_name": specialite_name,
+        }
 
     def list_documents(
         self,
@@ -64,14 +79,9 @@ class DocumentService:
         search: str = "",
     ):
         if type_document:
-            type_document = type_document.upper()
-            valides = [c[0] for c in TypeDocument.choices]
-            if type_document not in valides:
-                raise ValidationError(
-                    f"Type de document invalide. Valeurs autorisees : {', '.join(valides)}."
-                )
+            type_document = TypeDocument.normalize_code(type_document)
 
-        allowed_level_names = self._get_allowed_level_names_for_user(user)
+        student_scope = self._get_student_document_scope(user) or {}
 
         return self.repo.get_filtered(
             type_document=type_document,
@@ -82,13 +92,14 @@ class DocumentService:
             ajoute_par_id=ajoute_par_id,
             annee_academique_debut=annee_academique_debut,
             search=search.strip(),
-            allowed_level_names=allowed_level_names,
+            **student_scope,
         )
 
     def get_document(self, document_id: str, *, user=None) -> Document:
+        student_scope = self._get_student_document_scope(user) or {}
         document = self.repo.get_by_id(
             document_id,
-            allowed_level_names=self._get_allowed_level_names_for_user(user),
+            **student_scope,
         )
         if not document:
             raise ValidationError(f"Document introuvable : {document_id}.")

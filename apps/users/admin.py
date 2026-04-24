@@ -392,7 +392,7 @@ class FiliereAdmin(admin.ModelAdmin):
     list_per_page  = 20
 
     def get_queryset(self, request):
-        return super().get_queryset(request).annotate(
+        return super().get_queryset(request).prefetch_related('specialites').annotate(
             _nb_niveaux   = Count('niveaux', distinct=True),
             _nb_etudiants = Count('etudiants', distinct=True),
         )
@@ -420,7 +420,7 @@ class NiveauAdmin(admin.ModelAdmin):
     list_per_page  = 25
 
     def get_queryset(self, request):
-        return super().get_queryset(request).annotate(
+        return super().get_queryset(request).prefetch_related('specialites').annotate(
             _nb_specialites = Count('specialites', distinct=True),
             _nb_etudiants = Count('etudiants', distinct=True),
             _nb_documents = Count('documents', distinct=True),
@@ -482,9 +482,9 @@ class ECUEInline(admin.TabularInline):
 @admin.register(UE)
 class UEAdmin(admin.ModelAdmin):
 
-    list_display   = ('code', 'name', 'coef', 'nb_ecues', 'nb_documents', 'niveaux_list')
+    list_display   = ('code', 'name', 'coef', 'nb_ecues', 'nb_documents', 'specialites_list')
     search_fields  = ('code', 'name')
-    filter_horizontal = ('niveaux',)
+    filter_horizontal = ('specialites',)
     readonly_fields = ('coef',)
     inlines = [ECUEInline]
     list_per_page  = 25
@@ -507,12 +507,12 @@ class UEAdmin(admin.ModelAdmin):
     def nb_documents(self, obj):
         return obj._nb_documents
 
-    @admin.display(description="Niveaux")
-    def niveaux_list(self, obj):
-        niveaux = obj.niveaux.all()[:3]
-        noms    = ", ".join(str(n) for n in niveaux)
-        if obj.niveaux.count() > 3:
-            noms += f" +{obj.niveaux.count() - 3}"
+    @admin.display(description="Specialites")
+    def specialites_list(self, obj):
+        specialites = obj.specialites.all()[:3]
+        noms    = ", ".join(str(s) for s in specialites)
+        if obj.specialites.count() > 3:
+            noms += f" +{obj.specialites.count() - 3}"
         return noms or "—"
 
 
@@ -530,6 +530,22 @@ class ECUEAdmin(admin.ModelAdmin):
     ordering = ('ue__code', 'code')
 
 
+@admin.register(TypeDocument)
+class TypeDocumentAdmin(admin.ModelAdmin):
+
+    list_display = ('code', 'name', 'nb_documents', 'created_at', 'updated_at')
+    search_fields = ('code', 'name')
+    ordering = ('name',)
+    list_per_page = 25
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(_nb_documents=Count('documents', distinct=True))
+
+    @admin.display(description="Documents", ordering='_nb_documents')
+    def nb_documents(self, obj):
+        return obj._nb_documents
+
+
 @admin.register(Document)
 class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
 
@@ -540,7 +556,7 @@ class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
     list_filter    = ('type', 'annee_academique_debut', 'filiere', 'niveau', 'specialite', 'ue', 'created_at')
     search_fields  = ('title', 'auteur', 'encadreur', 'description', 'specialite__name', 'ue__code', 'ue__name')
     autocomplete_fields = ('filiere', 'niveau', 'specialite', 'ue', 'ajoute_par')
-    list_select_related = ('filiere', 'niveau', 'specialite', 'ue', 'ajoute_par')
+    list_select_related = ('type', 'filiere', 'niveau', 'specialite', 'ue', 'ajoute_par')
     date_hierarchy = 'created_at'
     ordering       = ('-annee_academique_debut', '-created_at')
     list_per_page  = 20
@@ -592,7 +608,7 @@ class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
             'THESE':   '#dc3545',
             'COURS':   '#007bff',
         }
-        color = colors.get(obj.type, '#6c757d')
+        color = colors.get(obj.type_code, '#6c757d')
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;'
             'border-radius:10px;font-size:11px;">{}</span>',
@@ -605,7 +621,7 @@ class DocumentAdmin(ExportCsvMixin, admin.ModelAdmin):
 
     @admin.display(description="Auteur / Sujet")
     def auteur_ou_encadreur(self, obj):
-        if obj.type in {TypeDocument.MEMOIRE, TypeDocument.THESE}:
+        if TypeDocument.requires_auteur(obj.type):
             return obj.auteur or "—"
         return obj.encadreur or "—"
 
@@ -763,7 +779,7 @@ class FavoriAdmin(admin.ModelAdmin):
     date_hierarchy  = 'created_at'
     ordering        = ('-created_at',)
     list_per_page   = 30
-    list_select_related = ('etudiant__user', 'document__ue', 'document__filiere')
+    list_select_related = ('etudiant__user', 'document__type', 'document__ue', 'document__filiere')
 
     # ── Formulaire détail ─────────────────────────────────────────────────────
     fieldsets = (
@@ -799,7 +815,7 @@ class FavoriAdmin(admin.ModelAdmin):
             'THESE':   '#dc3545',
             'COURS':   '#007bff',
         }
-        color = colors.get(obj.document.type, '#6c757d')
+        color = colors.get(obj.document.type_code, '#6c757d')
         return format_html(
             '<span style="background:{};color:#fff;padding:2px 8px;'
             'border-radius:10px;font-size:11px;font-weight:bold;">{}</span>',
@@ -856,7 +872,7 @@ class FavoriAdmin(admin.ModelAdmin):
         # Top 5 documents les plus mis en favoris
         top_docs = (
             Favori.objects
-            .values('document__title', 'document__type')
+            .values('document__title', 'document__type__name')
             .annotate(nb=Count('id'))
             .order_by('-nb')[:5]
         )

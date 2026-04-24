@@ -9,21 +9,34 @@ from apps.documents.models import Document
 class DocumentRepository:
 
     @staticmethod
-    def _apply_allowed_level_names(
+    def _apply_student_scope(
         queryset: QuerySet,
+        *,
         allowed_level_names: list[str] | None = None,
+        allowed_filiere_id=None,
+        allowed_specialite_name: str | None = None,
     ) -> QuerySet:
-        if allowed_level_names is None:
-            return queryset
-        if not allowed_level_names:
-            return queryset.none()
-        return queryset.filter(niveau__name__in=allowed_level_names)
+        if allowed_level_names is not None:
+            if not allowed_level_names:
+                return queryset.none()
+            queryset = queryset.filter(niveau__name__in=allowed_level_names)
+
+        if allowed_filiere_id:
+            queryset = queryset.filter(filiere_id=allowed_filiere_id)
+
+        if allowed_specialite_name:
+            queryset = queryset.filter(
+                Q(specialite__isnull=True)
+                | Q(specialite__name__iexact=allowed_specialite_name)
+            )
+
+        return queryset
 
     @staticmethod
     def get_all() -> QuerySet:
         return (
             Document.objects
-            .select_related("filiere", "niveau", "specialite", "ue", "ajoute_par")
+            .select_related("type", "filiere", "niveau", "specialite", "ue", "ajoute_par")
             .annotate(
                 _nb_consultations=Count("consultations", distinct=True),
                 _nb_favoris=Count("mis_en_favori_par", distinct=True),
@@ -36,10 +49,14 @@ class DocumentRepository:
         document_id: str,
         *,
         allowed_level_names: list[str] | None = None,
+        allowed_filiere_id=None,
+        allowed_specialite_name: str | None = None,
     ) -> Document | None:
-        queryset = DocumentRepository._apply_allowed_level_names(
+        queryset = DocumentRepository._apply_student_scope(
             DocumentRepository.get_all(),
-            allowed_level_names,
+            allowed_level_names=allowed_level_names,
+            allowed_filiere_id=allowed_filiere_id,
+            allowed_specialite_name=allowed_specialite_name,
         )
         return queryset.filter(pk=document_id).first()
 
@@ -55,14 +72,18 @@ class DocumentRepository:
         annee_academique_debut: str | None = None,
         search: str = "",
         allowed_level_names: list[str] | None = None,
+        allowed_filiere_id=None,
+        allowed_specialite_name: str | None = None,
     ) -> QuerySet:
-        queryset = DocumentRepository._apply_allowed_level_names(
+        queryset = DocumentRepository._apply_student_scope(
             DocumentRepository.get_all(),
-            allowed_level_names,
+            allowed_level_names=allowed_level_names,
+            allowed_filiere_id=allowed_filiere_id,
+            allowed_specialite_name=allowed_specialite_name,
         )
 
         if type_document:
-            queryset = queryset.filter(type=type_document)
+            queryset = queryset.filter(type__code=type_document)
         if filiere_id:
             queryset = queryset.filter(filiere_id=filiere_id)
         if niveau_id:

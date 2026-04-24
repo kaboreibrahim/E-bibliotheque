@@ -23,7 +23,8 @@ def user_avatar_upload_path(instance, filename):
     return f'users/avatars/{instance.id}_{filename}'
  
 def document_file_upload_path(instance, filename):
-    return f'documents/{instance.type}/{filename}'
+    document_type = getattr(getattr(instance, "type", None), "code", None) or "autre"
+    return f'documents/{document_type}/{filename}'
 
 
 # =============================================================================

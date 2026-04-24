@@ -25,11 +25,15 @@ class DocumentSpecialiteRulesTests(TestCase):
         self.niveau_l1 = Niveau.objects.create(filiere=self.filiere, name=Niveau.NiveauChoices.L1)
         self.niveau_l3 = Niveau.objects.create(filiere=self.filiere, name=Niveau.NiveauChoices.L3)
         self.specialite_l1 = Specialite.objects.create(name="Contentieux L1", niveau=self.niveau_l1)
+        self.type_cours, _ = TypeDocument.objects.get_or_create(
+            code=TypeDocument.COURS,
+            defaults={"name": "Cours"},
+        )
 
     def _build_document(self, *, niveau, specialite, annee_academique_debut=2024):
         return Document(
             title="Cours de procedure",
-            type=TypeDocument.COURS,
+            type=self.type_cours,
             file_base64=base64.b64encode(b"test").decode("ascii"),
             file_name="cours.pdf",
             file_mime_type="application/pdf",
@@ -105,7 +109,7 @@ class DocumentOpenApiTests(APITestCase):
     ) -> Document:
         return Document.objects.create(
             title=title,
-            type=TypeDocument.COURS,
+            type=self.type_cours,
             file_base64=self._build_base64_document(title.encode("utf-8")),
             file_name=f"{title.lower().replace(' ', '-')}.pdf",
             file_mime_type="application/pdf",
@@ -180,24 +184,49 @@ class DocumentOpenApiTests(APITestCase):
             name=Niveau.NiveauChoices.M2,
         )
         self.specialite_l1 = Specialite.objects.create(
-            name="Contentieux L1",
+            name="Droit prive",
             niveau=self.niveau_l1,
         )
         self.specialite_l2 = Specialite.objects.create(
-            name="Contentieux L2",
+            name="Droit prive",
             niveau=self.niveau_l2,
         )
         self.specialite_l3 = Specialite.objects.create(
-            name="Contentieux L3",
+            name="Droit prive",
             niveau=self.niveau_l3,
         )
         self.specialite_m1 = Specialite.objects.create(
-            name="Contentieux M1",
+            name="Droit prive",
             niveau=self.niveau_m1,
         )
         self.specialite_m2 = Specialite.objects.create(
-            name="Contentieux M2",
+            name="Droit prive",
             niveau=self.niveau_m2,
+        )
+        self.specialite_alt_l1 = Specialite.objects.create(
+            name="Droit public",
+            niveau=self.niveau_l1,
+        )
+        self.specialite_alt_l2 = Specialite.objects.create(
+            name="Droit public",
+            niveau=self.niveau_l2,
+        )
+        self.specialite_alt_l3 = Specialite.objects.create(
+            name="Droit public",
+            niveau=self.niveau_l3,
+        )
+        self.specialite_alt_m1 = Specialite.objects.create(
+            name="Droit public",
+            niveau=self.niveau_m1,
+        )
+        self.other_filiere = Filiere.objects.create(name="Economie")
+        self.other_niveau_l1 = Niveau.objects.create(
+            filiere=self.other_filiere,
+            name=Niveau.NiveauChoices.L1,
+        )
+        self.other_specialite_l1 = Specialite.objects.create(
+            name="Droit prive",
+            niveau=self.other_niveau_l1,
         )
         self.user = User.objects.create_user(
             email="reader@example.com",
@@ -233,10 +262,26 @@ class DocumentOpenApiTests(APITestCase):
             peut_gerer_documents=True,
             peut_gerer_utilisateurs=False,
         )
+        self.type_cours, _ = TypeDocument.objects.get_or_create(
+            code=TypeDocument.COURS,
+            defaults={"name": "Cours"},
+        )
+        self.type_examen, _ = TypeDocument.objects.get_or_create(
+            code=TypeDocument.EXAMEN,
+            defaults={"name": "Examen"},
+        )
+        self.type_memoire, _ = TypeDocument.objects.get_or_create(
+            code=TypeDocument.MEMOIRE,
+            defaults={"name": "Memoire"},
+        )
+        self.type_these, _ = TypeDocument.objects.get_or_create(
+            code=TypeDocument.THESE,
+            defaults={"name": "These"},
+        )
         self.document_base64 = self._build_base64_document(b"test")
         self.document = Document.objects.create(
             title="Cours de procedure",
-            type=TypeDocument.COURS,
+            type=self.type_cours,
             file_base64=self.document_base64,
             file_name="cours.pdf",
             file_mime_type="application/pdf",
@@ -291,16 +336,38 @@ class DocumentOpenApiTests(APITestCase):
         self.assertEqual(response.data[0]["id"], str(self.document.pk))
         self.assertIsNone(response.data[0]["file_base64"])
 
-    def test_student_list_is_limited_to_his_level_and_lower_levels(self):
+    def test_student_list_is_limited_to_his_specialite_and_lower_levels(self):
         document_l2 = self._create_document(
             title="Cours L2",
             niveau=self.niveau_l2,
             specialite=self.specialite_l2,
         )
         self._create_document(
+            title="Cours L1 autre specialite",
+            niveau=self.niveau_l1,
+            specialite=self.specialite_alt_l1,
+        )
+        self._create_document(
+            title="Cours L2 autre specialite",
+            niveau=self.niveau_l2,
+            specialite=self.specialite_alt_l2,
+        )
+        self._create_document(
             title="Cours L3",
             niveau=self.niveau_l3,
             specialite=self.specialite_l3,
+        )
+        Document.objects.create(
+            title="Cours autre filiere",
+            type=self.type_cours,
+            file_base64=self._build_base64_document(b"other-filiere"),
+            file_name="cours-autre-filiere.pdf",
+            file_mime_type="application/pdf",
+            filiere=self.other_filiere,
+            niveau=self.other_niveau_l1,
+            specialite=self.other_specialite_l1,
+            annee_academique_debut=2024,
+            encadreur="Pr. Economie",
         )
         user_l2 = self._create_student(
             email="reader-l2@example.com",
@@ -334,6 +401,11 @@ class DocumentOpenApiTests(APITestCase):
             title="Cours Master M1",
             niveau=self.niveau_m1,
             specialite=self.specialite_m1,
+        )
+        self._create_document(
+            title="Cours Master M1 autre specialite",
+            niveau=self.niveau_m1,
+            specialite=self.specialite_alt_m1,
         )
         self._create_document(
             title="Cours Master M2",
@@ -372,6 +444,20 @@ class DocumentOpenApiTests(APITestCase):
 
         detail_response = self.client.get(f"/api/documents/{document_l2.pk}/")
         open_response = self.client.get(f"/api/documents/{document_l2.pk}/ouvrir/")
+
+        self.assertEqual(detail_response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(open_response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_student_cannot_access_document_from_other_specialite(self):
+        document_other_specialite = self._create_document(
+            title="Cours reserve autre specialite",
+            niveau=self.niveau_l1,
+            specialite=self.specialite_alt_l1,
+        )
+        self.client.force_authenticate(user=self.user)
+
+        detail_response = self.client.get(f"/api/documents/{document_other_specialite.pk}/")
+        open_response = self.client.get(f"/api/documents/{document_other_specialite.pk}/ouvrir/")
 
         self.assertEqual(detail_response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(open_response.status_code, status.HTTP_404_NOT_FOUND)
@@ -464,6 +550,76 @@ class DocumentOpenApiTests(APITestCase):
         created_document = Document.objects.get(title="Memoire JSON")
         self.assertEqual(created_document.file_base64, raw_base64)
         self.assertEqual(created_document.file_name, "memoire-json.pdf")
+
+    def test_list_type_documents_returns_existing_types(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/documents/types/")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_codes = {item["code"] for item in response.data}
+        self.assertTrue({TypeDocument.COURS, TypeDocument.EXAMEN, TypeDocument.MEMOIRE}.issubset(returned_codes))
+
+    def test_admin_can_create_type_document(self):
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(
+            "/api/documents/types/",
+            {"code": "rapport", "name": "Rapport"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["code"], "RAPPORT")
+        self.assertTrue(TypeDocument.objects.filter(code="RAPPORT", name="Rapport").exists())
+
+    def test_admin_can_create_document_with_existing_custom_type(self):
+        self.client.force_authenticate(user=self.admin)
+        custom_type = TypeDocument.objects.create(code="RAPPORT", name="Rapport")
+
+        raw_base64 = base64.b64encode(b"rapport-stage").decode("ascii")
+        response = self.client.post(
+            "/api/documents/",
+            {
+                "title": "Rapport de stage",
+                "type": "rapport",
+                "file_base64": f"data:application/pdf;base64,{raw_base64}",
+                "file_name": "rapport-stage.pdf",
+                "file_mime_type": "application/pdf",
+                "description": "Rapport libre",
+                "filiere": str(self.filiere.pk),
+                "niveau": str(self.niveau_l1.pk),
+                "specialite": str(self.specialite_l1.pk),
+                "annee_academique_debut": 2025,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["type"], "RAPPORT")
+        self.assertEqual(response.data["type_display"], "Rapport")
+        created_document = Document.objects.get(title="Rapport de stage")
+        self.assertEqual(created_document.type, custom_type)
+
+    def test_list_documents_accepts_custom_type_filter(self):
+        custom_type = TypeDocument.objects.create(code="RAPPORT", name="Rapport")
+        custom_document = Document.objects.create(
+            title="Rapport L1",
+            type=custom_type,
+            file_base64=self._build_base64_document(b"rapport-l1"),
+            file_name="rapport-l1.pdf",
+            file_mime_type="application/pdf",
+            filiere=self.filiere,
+            niveau=self.niveau_l1,
+            specialite=self.specialite_l1,
+            annee_academique_debut=2024,
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/documents/?type=rapport")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([item["id"] for item in response.data], [str(custom_document.pk)])
 
     def test_bibliothecaire_with_document_permission_can_create_document(self):
         self.client.force_authenticate(user=self.biblio)
