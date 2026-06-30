@@ -1,0 +1,105 @@
+{% extends "emails/_base_email.html" %}
+
+{% block title %}Activation de votre compte — Bibliothèque Universitaire{% endblock %}
+
+{% block body %}
+
+  <!-- Icône + titre -->
+  <div style="text-align: center; margin-bottom: 28px;">
+    <div style="
+      display: inline-block;
+      background-color: #DBEAFE;
+      border-radius: 50%;
+      width: 64px;
+      height: 64px;
+      line-height: 64px;
+      font-size: 30px;
+      text-align: center;
+      margin-bottom: 16px;
+    ">✅</div>
+
+    <h2 style="
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      color: #1E3A8A;
+    ">Activation de votre compte</h2>
+
+    <p style="
+      margin: 8px 0 0;
+      font-size: 14px;
+      color: #64748B;
+    ">Votre accès à la bibliothèque universitaire</p>
+  </div>
+
+  <!-- Salutation -->
+  <p style="margin: 0 0 16px; font-size: 15px; color: #1E293B; line-height: 1.6;">
+    Bonjour <strong style="color: #1E40AF;">{{ user_name }}</strong>,
+  </p>
+  <p style="margin: 0 0 28px; font-size: 15px; color: #475569; line-height: 1.7;">
+    Pour finaliser l'activation de votre compte, veuillez utiliser le code de vérification
+    ci-dessous. Ce code confirme votre identité et sécurise votre accès.
+  </p>
+
+  <!-- Boîte du code OTP -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="margin-bottom: 28px;">
+    <tr>
+      <td align="center"
+          style="
+            background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
+            border: 2px dashed #93C5FD;
+            border-radius: 12px;
+            padding: 28px 24px;
+          ">
+        <p style="margin: 0 0 8px; font-size: 12px; font-weight: 600;
+                  color: #3B82F6; letter-spacing: 1.5px; text-transform: uppercase;">
+          Votre code d'activation
+        </p>
+        <div style="
+          font-size: 42px;
+          font-weight: 800;
+          letter-spacing: 10px;
+          color: #1E3A8A;
+          font-family: 'Courier New', Courier, monospace;
+          line-height: 1.2;
+          padding: 4px 0;
+        ">{{ code }}</div>
+        <p style="margin: 10px 0 0; font-size: 12px; color: #64748B;">
+          ⏱ Valable pendant <strong>{{ expiry_minutes }} minutes</strong> uniquement
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Étapes -->
+  <div style="
+    background-color: #F8FAFC;
+    border-left: 4px solid #3B82F6;
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  ">
+    <p style="margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #1E40AF;">
+      Comment utiliser ce code ?
+    </p>
+    <ol style="margin: 0; padding-left: 18px; font-size: 13px; color: #475569; line-height: 1.8;">
+      <li>Retournez sur la page d'activation</li>
+      <li>Saisissez le code à 6 chiffres ci-dessus</li>
+      <li>Votre compte sera immédiatement activé</li>
+    </ol>
+  </div>
+
+  <!-- Avertissement expiration -->
+  <p style="
+    margin: 0;
+    font-size: 13px;
+    color: #94A3B8;
+    text-align: center;
+    line-height: 1.5;
+  ">
+    Si vous n'avez pas demandé l'activation de ce compte, ignorez cet email.
+    <br/>Votre compte restera inactif.
+  </p>
+
+{% endblock %}

@@ -1,0 +1,140 @@
+.historique-layout {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.historique-panel,
+.historique-table-wrap {
+  background: var(--eb-panel-strong, #fffdf8);
+  border: 1px solid var(--eb-line, #ddd);
+  border-radius: 20px;
+  box-shadow: var(--eb-shadow, 0 18px 42px rgba(38, 36, 28, 0.12));
+}
+
+.historique-panel {
+  padding: 20px;
+  flex: 1;
+  min-width: 280px;
+}
+
+.historique-panel h3 {
+  margin: 0 0 12px;
+  color: var(--eb-ink, #1f342f);
+  font-family: var(--eb-heading, Georgia, "Times New Roman", serif);
+}
+
+.historique-label {
+  display: block;
+  margin: 12px 0 6px;
+  font-weight: 600;
+  color: var(--eb-ink, #1f342f);
+}
+
+.historique-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--eb-line, #c9c9c9);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.historique-button {
+  margin-top: 16px;
+  width: 100%;
+  background: linear-gradient(135deg, var(--eb-accent, #1d6a5b), var(--eb-accent-strong, #0f4c41));
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.historique-button:hover {
+  background: linear-gradient(135deg, var(--eb-accent-strong, #0f4c41), var(--eb-accent, #1d6a5b));
+}
+
+.historique-table-wrap {
+  overflow: hidden;
+}
+
+.historique-table,
+.historique-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.historique-table thead {
+  background: linear-gradient(135deg, #163f37, #26584c);
+  color: #fff;
+}
+
+.historique-table th,
+.historique-table td,
+.historique-stats-table th,
+.historique-stats-table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.historique-row-alt {
+  background: rgba(244, 238, 227, 0.52);
+}
+
+.historique-badge {
+  display: inline-block;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.historique-empty {
+  text-align: center;
+  color: var(--eb-ink-soft, #666);
+  padding: 20px;
+}
+
+.historique-error {
+  color: var(--eb-clay, #b42318);
+  padding: 20px;
+}
+
+.historique-muted {
+  color: var(--eb-ink-soft, #777);
+}
+
+.historique-ok {
+  color: var(--eb-accent, #157347);
+  font-weight: 700;
+}
+
+.historique-ko,
+.historique-stat-fail {
+  color: var(--eb-clay, #b42318);
+  font-weight: 700;
+}
+
+.historique-stat-total {
+  color: var(--eb-accent, #417690);
+  font-weight: 700;
+}
+
+.historique-mono {
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.historique-table code {
+  display: inline-block;
+  max-width: 420px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  background: rgba(29, 106, 91, 0.08);
+  padding: 4px 6px;
+  border-radius: 8px;
+}

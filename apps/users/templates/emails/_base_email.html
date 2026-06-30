@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>{% block title %}Bibliothèque Universitaire{% endblock %}</title>
+  <!--[if mso]>
+  <noscript>
+    <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+  </noscript>
+  <![endif]-->
+</head>
+<body style="
+  margin: 0;
+  padding: 0;
+  background-color: #F1F5F9;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
+">
+
+  <!-- Wrapper -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="background-color: #F1F5F9; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 40px 16px;">
+
+        <!-- Card container -->
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+               style="max-width: 560px; width: 100%;">
+
+          <!-- ─── HEADER ─── -->
+          <tr>
+            <td align="center"
+                style="
+                  background: linear-gradient(135deg, #1E3A8A 0%, #597cf0 50%, #4a7aff 100%);
+                  border-radius: 16px 16px 0 0;
+                  padding: 36px 40px 28px;
+                ">
+              <!-- Logo / Icône -->
+              <div style="
+                display: inline-block;
+                background-color: rgba(255,255,255,0.15);
+                border-radius: 50%;
+                width: 60px;
+                height: 60px;
+                line-height: 60px;
+                text-align: center;
+                font-size: 28px;
+                margin-bottom: 16px;
+              ">📚</div>
+
+              <h1 style="
+                margin: 0;
+                color: #FFFFFF;
+                font-size: 18px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+              ">Bibliothèque Universitaire</h1>
+
+              <p style="
+                margin: 6px 0 0;
+                color: rgba(255,255,255,0.75);
+                font-size: 13px;
+              ">Système de gestion documentaire</p>
+            </td>
+          </tr>
+
+          <!-- ─── CORPS ─── -->
+          <tr>
+            <td style="
+              background-color: #FFFFFF;
+              padding: 36px 40px;
+            ">
+              {% block body %}{% endblock %}
+            </td>
+          </tr>
+
+          <!-- ─── AVERTISSEMENT SÉCURITÉ ─── -->
+          <tr>
+            <td style="
+              background-color: #F8FAFC;
+              border-top: 1px solid #E2E8F0;
+              padding: 20px 40px;
+            ">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td width="20" valign="top" style="padding-top: 1px;">
+                    <span style="font-size: 14px;">🔒</span>
+                  </td>
+                  <td style="padding-left: 8px;">
+                    <p style="
+                      margin: 0;
+                      font-size: 12px;
+                      color: #64748B;
+                      line-height: 1.6;
+                    ">
+                      <strong style="color: #475569;">Sécurité :</strong>
+                      Ne communiquez jamais ce code à personne. Notre équipe ne vous demandera
+                      jamais votre mot de passe ni ce code par téléphone ou email.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ─── FOOTER ─── -->
+          <tr>
+            <td align="center"
+                style="
+                  background-color: #EFF6FF;
+                  border-top: 1px solid #DBEAFE;
+                  border-radius: 0 0 16px 16px;
+                  padding: 20px 40px;
+                ">
+              <p style="margin: 0; font-size: 12px; color: #93C5FD;">
+                © 2025 · Bibliothèque Universitaire · Tous droits réservés
+              </p>
+              <p style="margin: 6px 0 0; font-size: 11px; color: #BFDBFE;">
+                Cet email a été envoyé automatiquement, merci de ne pas y répondre.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+</html>

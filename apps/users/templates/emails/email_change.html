@@ -1,0 +1,120 @@
+{% extends "emails/_base_email.html" %}
+
+{% block title %}Confirmation de changement d'email — Bibliothèque Universitaire{% endblock %}
+
+{% block body %}
+
+  <!-- Icône + titre -->
+  <div style="text-align: center; margin-bottom: 28px;">
+    <div style="
+      display: inline-block;
+      background-color: #F0FDF4;
+      border-radius: 50%;
+      width: 64px;
+      height: 64px;
+      line-height: 64px;
+      font-size: 30px;
+      text-align: center;
+      margin-bottom: 16px;
+    ">✉️</div>
+
+    <h2 style="
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      color: #1E3A8A;
+    ">Changement d'adresse email</h2>
+
+    <p style="
+      margin: 8px 0 0;
+      font-size: 14px;
+      color: #64748B;
+    ">Confirmez votre nouvelle adresse avec ce code</p>
+  </div>
+
+  <!-- Salutation -->
+  <p style="margin: 0 0 16px; font-size: 15px; color: #1E293B; line-height: 1.6;">
+    Bonjour <strong style="color: #1E40AF;">{{ user_name }}</strong>,
+  </p>
+  <p style="margin: 0 0 28px; font-size: 15px; color: #475569; line-height: 1.7;">
+    Vous avez demandé la modification de votre adresse email. Veuillez entrer le code
+    de confirmation ci-dessous pour valider ce changement sur votre compte.
+  </p>
+
+  <!-- Boîte du code OTP -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="margin-bottom: 28px;">
+    <tr>
+      <td align="center"
+          style="
+            background: linear-gradient(135deg, #F0FDF4 0%, #DCFCE7 100%);
+            border: 2px dashed #86EFAC;
+            border-radius: 12px;
+            padding: 28px 24px;
+          ">
+        <p style="margin: 0 0 8px; font-size: 12px; font-weight: 600;
+                  color: #16A34A; letter-spacing: 1.5px; text-transform: uppercase;">
+          Code de confirmation email
+        </p>
+        <div style="
+          font-size: 42px;
+          font-weight: 800;
+          letter-spacing: 10px;
+          color: #1E3A8A;
+          font-family: 'Courier New', Courier, monospace;
+          line-height: 1.2;
+          padding: 4px 0;
+        ">{{ code }}</div>
+        <p style="margin: 10px 0 0; font-size: 12px; color: #64748B;">
+          ⏱ Valable pendant <strong>{{ expiry_minutes }} minutes</strong> uniquement
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Info boîte -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="margin-bottom: 24px;">
+    <tr>
+      <td style="
+        background-color: #EFF6FF;
+        border: 1px solid #BFDBFE;
+        border-left: 4px solid #3B82F6;
+        border-radius: 0 8px 8px 0;
+        padding: 14px 18px;
+      ">
+        <p style="margin: 0; font-size: 13px; color: #1E40AF; line-height: 1.6;">
+          ℹ️ <strong>Note :</strong> Ce code a été envoyé à votre <strong>nouvelle adresse email</strong>.
+          Tant que le changement n'est pas confirmé, votre ancienne adresse reste active.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Sécurité -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="margin-bottom: 20px;">
+    <tr>
+      <td style="
+        background-color: #FFF1F2;
+        border: 1px solid #FECDD3;
+        border-left: 4px solid #F43F5E;
+        border-radius: 0 8px 8px 0;
+        padding: 14px 18px;
+      ">
+        <p style="margin: 0; font-size: 13px; color: #9F1239; line-height: 1.6;">
+          ⚠️ <strong>Vous n'avez pas fait cette demande ?</strong><br/>
+          Ignorez cet email. Votre adresse email actuelle ne sera pas modifiée.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <p style="
+    margin: 0;
+    font-size: 13px;
+    color: #94A3B8;
+    text-align: center;
+  ">Ce code expirera automatiquement après {{ expiry_minutes }} minutes.</p>
+
+{% endblock %}

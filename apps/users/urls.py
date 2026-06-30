@@ -1,0 +1,353 @@
+"""
+=============================================================================
+ apps/users/urls.py
+ Routes Auth — 3 flux séparés par rôle + communs
+
+ ROUTES ÉTUDIANT   → /api/auth/etudiant/...
+ ROUTES EXTERNE    → /api/auth/personne-externe/...
+ ROUTES BIBLIO     → /api/auth/bibliothecaire/...
+ ROUTES ADMIN      → /api/auth/admin/...
+ ROUTES COMMUNES   → /api/auth/...
+=============================================================================
+"""
+
+from django.urls import path
+from apps.users.views.auth_views import (
+    # Étudiant
+    EtudiantLoginView,
+    EtudiantTOTPVerifyView,
+    PersonneExterneLoginView,
+    PersonneExterneTOTPVerifyView,
+    # Bibliothécaire
+    BibliothecaireLoginView,
+    BibliothecaireTOTPVerifyView,
+    # Admin
+    AdminLoginView,
+    AdminTOTPVerifyView,
+    # Enseignant-Chercheur
+    EnseignantChercheurLoginView,
+    EnseignantChercheurTOTPVerifyView,
+    # Chercheur
+    ChercheurLoginView,
+    ChercheurTOTPVerifyView,
+    # TOTP Setup (Admin + Biblio)
+    TOTPSetupView,
+    TOTPConfirmView,
+    # OTP Email
+    OTPSendView,
+    OTPVerifyView,
+    # Password Reset
+    PasswordResetRequestView,
+    PasswordResetConfirmView,
+    # Tokens
+    TokenRefreshView,
+    LogoutView,
+)
+from apps.users.views.profile_views import CurrentUserProfileView
+ 
+
+auth_urlpatterns = [
+
+    # ══════════════════════════════════════════════════════
+    # 🎓  ÉTUDIANT — matricule + password + TOTP
+    # ══════════════════════════════════════════════════════
+    path(
+        'etudiant/login/',
+        EtudiantLoginView.as_view(),
+        name='etudiant-login'
+    ),
+    path(
+        'etudiant/totp/verify/',
+        EtudiantTOTPVerifyView.as_view(),
+        name='etudiant-totp-verify'
+    ),
+    path(
+        'personne-externe/login/',
+        PersonneExterneLoginView.as_view(),
+        name='personne-externe-login'
+    ),
+    path(
+        'personne-externe/totp/verify/',
+        PersonneExterneTOTPVerifyView.as_view(),
+        name='personne-externe-totp-verify'
+    ),
+
+    # ══════════════════════════════════════════════════════
+    # 📖  BIBLIOTHÉCAIRE — email + password + TOTP
+    # ══════════════════════════════════════════════════════
+    path(
+        'bibliothecaire/login/',
+        BibliothecaireLoginView.as_view(),
+        name='bibliothecaire-login'
+    ),
+    path(
+        'bibliothecaire/totp/verify/',
+        BibliothecaireTOTPVerifyView.as_view(),
+        name='bibliothecaire-totp-verify'
+    ),
+
+    # ══════════════════════════════════════════════════════
+    # 🔑  ADMINISTRATEUR — email + password + TOTP
+    # ══════════════════════════════════════════════════════
+    path(
+        'admin/login/',
+        AdminLoginView.as_view(),
+        name='admin-login'
+    ),
+    path(
+        'admin/totp/verify/',
+        AdminTOTPVerifyView.as_view(),
+        name='admin-totp-verify'
+    ),
+
+    # ══════════════════════════════════════════════════════
+    # 🔧  CONFIGURATION GOOGLE AUTHENTICATOR (Admin + Biblio)
+    # ══════════════════════════════════════════════════════
+    path(
+        'totp/setup/',
+        TOTPSetupView.as_view(),
+        name='totp-setup'
+    ),
+    path(
+        'totp/confirm/',
+        TOTPConfirmView.as_view(),
+        name='totp-confirm'
+    ),
+
+    # ══════════════════════════════════════════════════════
+    # 📧  OTP EMAIL (commun à tous les rôles)
+    # ══════════════════════════════════════════════════════
+    path(
+        'otp/send/',
+        OTPSendView.as_view(),
+        name='otp-send'
+    ),
+    path(
+        'otp/verify/',
+        OTPVerifyView.as_view(),
+        name='otp-verify'
+    ),
+
+    # ══════════════════════════════════════════════════════
+    # 🔄  MOT DE PASSE (commun)
+    # ══════════════════════════════════════════════════════
+    path(
+        'password/reset/',
+        PasswordResetRequestView.as_view(),
+        name='password-reset-request'
+    ),
+    path(
+        'password/reset/confirm/',
+        PasswordResetConfirmView.as_view(),
+        name='password-reset-confirm'
+    ),
+
+    # ══════════════════════════════════════════════════════
+    # 🔑  TOKENS JWT (commun)
+    # ══════════════════════════════════════════════════════
+    path(
+        'token/refresh/',
+        TokenRefreshView.as_view(),
+        name='token-refresh'
+    ),
+    path(
+        'logout/',
+        LogoutView.as_view(),
+        name='logout'
+    ),
+    path(
+        'profile/',
+        CurrentUserProfileView.as_view(),
+        name='current-user-profile'
+    ),
+
+    # ══════════════════════════════════════════════════════
+    # 👨‍🏫  ENSEIGNANT-CHERCHEUR — email + password + TOTP
+    # ══════════════════════════════════════════════════════
+    path(
+        'enseignant-chercheur/login/',
+        EnseignantChercheurLoginView.as_view(),
+        name='enseignant-chercheur-login'
+    ),
+    path(
+        'enseignant-chercheur/totp/verify/',
+        EnseignantChercheurTOTPVerifyView.as_view(),
+        name='enseignant-chercheur-totp-verify'
+    ),
+
+    # ══════════════════════════════════════════════════════
+    # 🔬  CHERCHEUR — email + password + TOTP
+    # ══════════════════════════════════════════════════════
+    path(
+        'chercheur/login/',
+        ChercheurLoginView.as_view(),
+        name='chercheur-login'
+    ),
+    path(
+        'chercheur/totp/verify/',
+        ChercheurTOTPVerifyView.as_view(),
+        name='chercheur-totp-verify'
+    ),
+]
+
+# Django uses `urlpatterns` when this module is included from `core/urls.py`.
+# Only authentication routes live under `/api/auth/`.
+urlpatterns = auth_urlpatterns
+
+
+# ── apps/users/urls/etudiant_urls.py ─────────────────────────────────────────
+ 
+from django.urls import path
+from apps.users.views.creation_views import (
+    EtudiantListView,
+    EtudiantCreateView,
+    EtudiantExportExcelView,
+    EtudiantDetailView,
+    EtudiantActiverView,
+    PersonneExterneListView,
+    PersonneExterneCreateView,
+    PersonneExterneDetailView,
+    BibliothecaireListView,
+    BibliothecaireCreateView,
+    BibliothecaireDetailView,
+    EnseignantChercheurListView,
+    EnseignantChercheurCreateView,
+    EnseignantChercheurDetailView,
+    EnseignantChercheurSuspendreView,
+    ChercheurListView,
+    ChercheurCreateView,
+    ChercheurDetailView,
+    ChercheurSuspendreView,
+)
+
+
+
+etudiant_urlpatterns = [
+    # ── Liste + Création ─────────────────────────────────────
+    # GET  /api/etudiants/   → lister   [Admin | Biblio]
+    # POST /api/etudiants/   → créer    [Admin | Biblio avec peut_gerer_utilisateurs]
+    path(
+        '',
+        type('_View', (EtudiantListView, EtudiantCreateView), {
+            'get': EtudiantListView.get,
+            'post': EtudiantCreateView.post,
+        }).as_view(),
+        name='etudiant-list-create'
+    ),
+
+    path(
+        'export/excel/',
+        EtudiantExportExcelView.as_view(),
+        name='etudiant-export-excel'
+    ),
+ 
+    # ── Détail + Modification + Suppression ──────────────────
+    # GET    /api/etudiants/<id>/   → détail   [Admin | Biblio]
+    # PATCH  /api/etudiants/<id>/   → modifier [Admin | Biblio]
+    # DELETE /api/etudiants/<id>/   → supprimer [Admin seulement]
+    path(
+        '<uuid:etudiant_id>/',
+        EtudiantDetailView.as_view(),
+        name='etudiant-detail'
+    ),
+ 
+    # ── Activation ───────────────────────────────────────────
+    # POST /api/etudiants/<id>/activer/
+    # Body: {"action": "activer" | "reactiver"}
+    path(
+        '<uuid:etudiant_id>/activer/',
+        EtudiantActiverView.as_view(),
+        name='etudiant-activer'
+    ),
+    
+]
+
+
+personne_externe_urlpatterns = [
+    path(
+        '',
+        type('_PView', (PersonneExterneListView, PersonneExterneCreateView), {
+            'get': PersonneExterneListView.get,
+            'post': PersonneExterneCreateView.post,
+        }).as_view(),
+        name='personne-externe-list-create'
+    ),
+    path(
+        '<uuid:personne_id>/',
+        PersonneExterneDetailView.as_view(),
+        name='personne-externe-detail'
+    ),
+]
+ 
+ 
+bibliothecaire_urlpatterns = [
+    # ── Liste + Création ─────────────────────────────────────
+    # GET  /api/bibliothecaires/   → lister [Admin]
+    # POST /api/bibliothecaires/   → créer  [Admin]
+    path(
+        '',
+        type('_BView', (BibliothecaireListView, BibliothecaireCreateView), {
+            'get': BibliothecaireListView.get,
+            'post': BibliothecaireCreateView.post,
+        }).as_view(),
+        name='bibliothecaire-list-create'
+    ),
+
+    # ── Détail + Modification + Suppression ──────────────────
+    # GET    /api/bibliothecaires/<id>/   [Admin]
+    # PATCH  /api/bibliothecaires/<id>/   [Admin]
+    # DELETE /api/bibliothecaires/<id>/   [Admin]
+    path(
+        '<uuid:biblio_id>/',
+        BibliothecaireDetailView.as_view(),
+        name='bibliothecaire-detail'
+    ),
+]
+
+
+# ── Enseignants-Chercheurs ────────────────────────────────────────────────────
+
+enseignant_chercheur_urlpatterns = [
+    path(
+        '',
+        type('_ECView', (EnseignantChercheurListView, EnseignantChercheurCreateView), {
+            'get': EnseignantChercheurListView.get,
+            'post': EnseignantChercheurCreateView.post,
+        }).as_view(),
+        name='enseignant-chercheur-list-create'
+    ),
+    path(
+        '<uuid:enseignant_id>/',
+        EnseignantChercheurDetailView.as_view(),
+        name='enseignant-chercheur-detail'
+    ),
+    path(
+        '<uuid:enseignant_id>/suspendre/',
+        EnseignantChercheurSuspendreView.as_view(),
+        name='enseignant-chercheur-suspendre'
+    ),
+]
+
+
+# ── Chercheurs ────────────────────────────────────────────────────────────────
+
+chercheur_urlpatterns = [
+    path(
+        '',
+        type('_CView', (ChercheurListView, ChercheurCreateView), {
+            'get': ChercheurListView.get,
+            'post': ChercheurCreateView.post,
+        }).as_view(),
+        name='chercheur-list-create'
+    ),
+    path(
+        '<uuid:chercheur_id>/',
+        ChercheurDetailView.as_view(),
+        name='chercheur-detail'
+    ),
+    path(
+        '<uuid:chercheur_id>/suspendre/',
+        ChercheurSuspendreView.as_view(),
+        name='chercheur-suspendre'
+    ),
+]
