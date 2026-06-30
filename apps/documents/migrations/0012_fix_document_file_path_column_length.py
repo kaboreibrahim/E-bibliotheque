@@ -11,11 +11,11 @@ class Migration(migrations.Migration):
         migrations.RunSQL(
             sql=(
                 "ALTER TABLE documents_document "
-                "ALTER COLUMN file_path TYPE varchar(1024);"
+                "MODIFY COLUMN file_path varchar(1024);"
             ),
             reverse_sql=(
                 "ALTER TABLE documents_document "
-                "ALTER COLUMN file_path TYPE varchar(100);"
+                "MODIFY COLUMN file_path varchar(100);"
             ),
         ),
     ]
