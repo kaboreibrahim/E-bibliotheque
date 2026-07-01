@@ -1,17 +1,14 @@
-import importlib.machinery
-import importlib.util
 import os
 import sys
 
+# Absolute path to the project root (where this file lives)
+PROJ_DIR = os.path.dirname(os.path.abspath(__file__))
 
-sys.path.insert(0, os.path.dirname(__file__))
+# Make sure Django can find the project packages
+if PROJ_DIR not in sys.path:
+    sys.path.insert(0, PROJ_DIR)
 
-def load_source(modname, filename):
-    loader = importlib.machinery.SourceFileLoader(modname, filename)
-    spec = importlib.util.spec_from_file_location(modname, filename, loader=loader)
-    module = importlib.util.module_from_spec(spec)
-    loader.exec_module(module)
-    return module
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
-wsgi = load_source('wsgi', 'core/wsgi.py')
-application = wsgi.application
+from django.core.wsgi import get_wsgi_application
+application = get_wsgi_application()
