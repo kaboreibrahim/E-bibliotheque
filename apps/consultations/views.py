@@ -57,10 +57,10 @@ def _get_user_agent(request) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 @extend_schema_view(
     list=extend_schema(
-        summary="Lister les consultations",
+        summary="Lister mes consultations",
         tags=["Consultations"],
+        description="Retourne uniquement les consultations de l'utilisateur connecté.",
         parameters=[
-            OpenApiParameter(name="user",     description="Filtrer par UUID d'utilisateur",  required=False, type=str),
             OpenApiParameter(name="document", description="Filtrer par UUID de document",     required=False, type=str),
             OpenApiParameter(
                 name="type",
@@ -71,8 +71,8 @@ def _get_user_agent(request) -> str:
             ),
         ],
     ),
-    retrieve=extend_schema(summary="Détail d'une consultation",          tags=["Consultations"]),
-    destroy=extend_schema(summary="Supprimer une consultation (soft)",   tags=["Consultations"]),
+    retrieve=extend_schema(summary="Détail d'une de mes consultations",          tags=["Consultations"]),
+    destroy=extend_schema(summary="Supprimer une de mes consultations (soft)",   tags=["Consultations"]),
 )
 class ConsultationViewSet(viewsets.ViewSet):
     """
@@ -83,17 +83,22 @@ class ConsultationViewSet(viewsets.ViewSet):
 
     # ── GET /consultations/ ───────────────────────────────────────────────────
     def list(self, request):
-        user_id     = request.query_params.get("user")
         document_id = request.query_params.get("document")
         type_c      = request.query_params.get("type")
         try:
-            qs = _service.list_consultations(
-                user_id=user_id,
-                document_id=document_id,
-                type_consultation=type_c,
-            )
+            qs = _service.list_consultations(user_id=str(request.user.pk))
         except ValidationError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_400_BAD_REQUEST)
+        if document_id:
+            qs = qs.filter(document_id=document_id)
+        if type_c:
+            valides = [c[0] for c in Consultation.TypeConsultation.choices]
+            if type_c not in valides:
+                return Response(
+                    {"detail": f"Type invalide. Valeurs autorisees : {', '.join(valides)}."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            qs = qs.filter(type_consultation=type_c)
         return Response(ConsultationSerializer(qs, many=True).data)
 
     # ── GET /consultations/{id}/ ──────────────────────────────────────────────
@@ -102,14 +107,25 @@ class ConsultationViewSet(viewsets.ViewSet):
             consultation = _service.get_consultation(pk)
         except ValidationError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
+        if str(consultation.user_id) != str(request.user.pk):
+            return Response(
+                {"detail": f"Consultation introuvable : {pk}."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         return Response(ConsultationSerializer(consultation).data)
 
     # ── DELETE /consultations/{id}/ ───────────────────────────────────────────
     def destroy(self, request, pk=None):
         try:
-            _service.supprimer_consultation(pk)
+            consultation = _service.get_consultation(pk)
         except ValidationError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
+        if str(consultation.user_id) != str(request.user.pk):
+            return Response(
+                {"detail": f"Consultation introuvable : {pk}."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        _service.supprimer_consultation(pk)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     # ── POST /consultations/vue/ ──────────────────────────────────────────────
@@ -131,7 +147,7 @@ class ConsultationViewSet(viewsets.ViewSet):
         try:
             consultation = _service.enregistrer_vue(
                 document_id=str(vd["document"]),
-                user_id=str(vd["user"]) if vd.get("user") else None,
+                user_id=str(request.user.pk),
                 ip_address=_get_client_ip(request),
                 user_agent=_get_user_agent(request),
             )
@@ -154,7 +170,7 @@ class ConsultationViewSet(viewsets.ViewSet):
         try:
             consultation = _service.enregistrer_recherche(
                 recherche_query=vd["recherche_query"],
-                user_id=str(vd["user"]) if vd.get("user") else None,
+                user_id=str(request.user.pk),
                 ip_address=_get_client_ip(request),
                 user_agent=_get_user_agent(request),
             )
@@ -174,6 +190,15 @@ class ConsultationViewSet(viewsets.ViewSet):
     )
     @action(detail=True, methods=["patch"], url_path="terminer")
     def terminer(self, request, pk=None):
+        try:
+            existante = _service.get_consultation(pk)
+        except ValidationError as exc:
+            return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
+        if str(existante.user_id) != str(request.user.pk):
+            return Response(
+                {"detail": f"Consultation introuvable : {pk}."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         try:
             consultation = _service.terminer_consultation(pk)
         except ValidationError as exc:
@@ -246,18 +271,9 @@ class ConsultationViewSet(viewsets.ViewSet):
     @extend_schema(
         summary="Consultations en cours (non terminées) de l'utilisateur courant",
         tags=["Consultations"],
-        parameters=[
-            OpenApiParameter(name="user", description="UUID de l'utilisateur", required=True, type=str),
-        ],
         responses={200: ConsultationSerializer(many=True)},
     )
     @action(detail=False, methods=["get"], url_path="en-cours")
     def en_cours(self, request):
-        user_id = request.query_params.get("user")
-        if not user_id:
-            return Response(
-                {"detail": "Le paramètre 'user' est obligatoire."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        qs = _service.get_consultations_en_cours(user_id)
+        qs = _service.get_consultations_en_cours(str(request.user.pk))
         return Response(ConsultationSerializer(qs, many=True).data)

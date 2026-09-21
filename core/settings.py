@@ -45,6 +45,9 @@ ALLOWED_HOSTS = [
     "www.otl-bulkliquid.com",
     "127.0.0.1",
     "localhost",
+    "10.0.2.2",  # Émulateur Android → pointe vers localhost de la machine hôte (app mobile en dev)
+    "192.168.1.115",  # IP LAN Wi-Fi de la machine de dev → accès depuis un téléphone physique
+    "192.168.1.27",  # IP LAN Ethernet de la machine de dev → accès depuis un téléphone physique
 ]
 
 
@@ -71,6 +74,7 @@ INSTALLED_APPS = [
 
     #Local apps
     'apps.users',
+    'apps.annee_academique',
     'apps.filiere',
     'apps.niveau',
     'apps.ue',
@@ -235,38 +239,38 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 # Pour PostgreSQL (optionnel)
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': config('DB_NAME'),
-#         'USER': config('DB_USER'),
-#         'PASSWORD': config('DB_PASSWORD'),
-#         'HOST': config('DB_HOST'),
-#         'PORT': config('DB_PORT'),
-
-#         'OPTIONS': {
-#             'connect_timeout': 10,
-#         },
-#         'CONN_MAX_AGE': 60,   # connexions persistantes (60 sec)
-#     }
-# }
-
-# Pour MySQL (actif)
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'c2745157c_BIBLIOv1',
-        'USER': 'c2745157c_user',
-        'PASSWORD': '#4h].2WrwNrELChB',
-        'HOST': 'localhost',      # ou l'adresse de ton serveur MySQL
-        'PORT': '3306',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME'),
+        'USER': config('DB_USER'),
+        'PASSWORD': config('DB_PASSWORD'),
+        'HOST': config('DB_HOST'),
+        'PORT': config('DB_PORT'),
+
         'OPTIONS': {
-            'charset': 'utf8mb4',
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES', time_zone='+00:00'",
+            'connect_timeout': 10,
         },
-        'CONN_MAX_AGE': 60,
+        'CONN_MAX_AGE': 60,   # connexions persistantes (60 sec)
     }
 }
+
+# # Pour MySQL (actif)
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': 'c2745157c_BIBLIOv1',
+#         'USER': 'c2745157c_user',
+#         'PASSWORD': '#4h].2WrwNrELChB',
+#         'HOST': 'localhost',      # ou l'adresse de ton serveur MySQL
+#         'PORT': '3306',
+#         'OPTIONS': {
+#             'charset': 'utf8mb4',
+#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES', time_zone='+00:00'",
+#         },
+#         'CONN_MAX_AGE': 60,
+#     }
+# }
 
 
 # =============================================================================
@@ -348,10 +352,10 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Email settings
-DEBUG=True
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'ibrahimkabore025@gmail.com'  # Replace with your Gmail address
-EMAIL_HOST_PASSWORD = 'hrwc jlvv ksqy gfeq'
+EMAIL_HOST = config('EMAIL_HOST', default='mail.otl-bulkliquid.com')
+EMAIL_PORT = config('EMAIL_PORT', default=465, cast=int)
+EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=True, cast=bool)
+EMAIL_USE_TLS = False
+EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')

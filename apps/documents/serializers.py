@@ -293,6 +293,142 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class DocumentUpdateSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(
+        max_length=255,
+        required=False,
+        help_text="Titre du document.",
+    )
+    type = serializers.CharField(
+        max_length=100,
+        required=False,
+        help_text=(
+            "Code d'un type de document existant. Exemples : COURS, EXAMEN, "
+            "MEMOIRE ou THESE."
+        ),
+    )
+    file_path = serializers.FileField(
+        required=False,
+        write_only=True,
+        help_text="Nouveau fichier a televerser (optionnel, remplace l'existant).",
+    )
+    file_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Nom du fichier a conserver en base.",
+    )
+    file_mime_type = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Type MIME du document. Ex: application/pdf.",
+    )
+    description = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Description libre du document.",
+    )
+    filiere = serializers.PrimaryKeyRelatedField(
+        queryset=Filiere.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="UUID de la filiere rattachee au document.",
+    )
+    niveau = serializers.PrimaryKeyRelatedField(
+        queryset=Niveau.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="UUID du niveau rattache au document.",
+    )
+    specialite = serializers.PrimaryKeyRelatedField(
+        queryset=Specialite.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="UUID de la specialite. Requis pour les niveaux qui l'imposent.",
+    )
+    ue = serializers.PrimaryKeyRelatedField(
+        queryset=ECUE.objects.all(),
+        required=False,
+        allow_null=True,
+        help_text="UUID de l'ECUE concernee.",
+    )
+    annee_academique_debut = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text="Annee de debut. Exemple: 2024 pour 2024-2025.",
+    )
+    auteur = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Auteur du document. Requis pour MEMOIRE et THESE.",
+    )
+
+    class Meta:
+        model = Document
+        fields = [
+            "title",
+            "type",
+            "file_path",
+            "file_name",
+            "file_mime_type",
+            "description",
+            "filiere",
+            "niveau",
+            "specialite",
+            "ue",
+            "annee_academique_debut",
+            "auteur",
+        ]
+
+    def validate_type(self, value: str) -> TypeDocument:
+        normalized = TypeDocument.normalize_code(value)
+        if not normalized:
+            raise serializers.ValidationError("Le type de document est obligatoire.")
+        type_document = TypeDocument.objects.filter(code=normalized).first()
+        if not type_document:
+            raise serializers.ValidationError(
+                "Type de document introuvable. Creez-le d'abord dans la liste des types."
+            )
+        return type_document
+
+    def validate(self, attrs):
+        upload = attrs.get("file_path")
+
+        if upload is not None:
+            detected_file_name, detected_mime_type = extract_document_file_metadata(upload)
+            attrs["file_name"] = Path(attrs.get("file_name") or detected_file_name).name
+            attrs["file_mime_type"] = attrs.get("file_mime_type") or detected_mime_type
+        elif attrs.get("file_name"):
+            attrs["file_name"] = Path(attrs["file_name"]).name
+
+        instance = self.instance
+        merged_fields = {
+            "title": attrs.get("title", instance.title),
+            "type": attrs.get("type", instance.type),
+            "file_path": upload if upload is not None else instance.file_path,
+            "file_name": attrs.get("file_name", instance.file_name),
+            "file_mime_type": attrs.get("file_mime_type", instance.file_mime_type),
+            "description": attrs.get("description", instance.description),
+            "filiere": attrs.get("filiere", instance.filiere),
+            "niveau": attrs.get("niveau", instance.niveau),
+            "specialite": attrs.get("specialite", instance.specialite),
+            "ue": attrs.get("ue", instance.ue),
+            "annee_academique_debut": attrs.get(
+                "annee_academique_debut", instance.annee_academique_debut
+            ),
+            "auteur": attrs.get("auteur", instance.auteur),
+        }
+
+        check_instance = Document(pk=instance.pk, **merged_fields)
+        try:
+            check_instance.full_clean()
+        except DjangoValidationError as exc:
+            detail = exc.message_dict
+            if not isinstance(detail, Mapping):
+                detail = {"detail": exc.messages}
+            raise serializers.ValidationError(detail)
+        return attrs
+
+
 class DocumentOpenResponseSerializer(serializers.Serializer):
     consultation_id = serializers.UUIDField()
     document = DocumentSerializer()

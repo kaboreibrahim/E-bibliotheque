@@ -557,7 +557,7 @@ class FiliereAdmin(admin.ModelAdmin):
     list_per_page  = 20
 
     def get_queryset(self, request):
-        return super().get_queryset(request).prefetch_related('specialites').annotate(
+        return super().get_queryset(request).annotate(
             _nb_niveaux   = Count('niveaux', distinct=True),
             _nb_etudiants = Count('etudiants', distinct=True),
         )

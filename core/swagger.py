@@ -91,6 +91,7 @@ Le token expire en **15 minutes**. Rafraîchissez-le avec `/api/auth/token/refre
         {'name': 'Utilisateurs',     'description': '👤 CRUD utilisateurs'},
         {'name': 'Étudiants',        'description': '🎓 Profils étudiants, activation, expiration'},
         {'name': 'Bibliothécaires',  'description': '📖 Profils bibliothécaires'},
+        {'name': 'Années académiques', 'description': '🗓️ Année universitaire en cours (pilote la validité par défaut des comptes étudiants)'},
         {'name': 'Filières',         'description': '🏫 Filières universitaires'},
         {'name': 'Niveaux',          'description': '📊 Niveaux (L1-L2-L3-M1-M2-DOCTORAT avec spécialité)'},
         {'name': 'Spécialités',      'description': '🎯 Spécialités L1/L2/L3/M1/M2/DOCTORAT'},

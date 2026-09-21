@@ -1,0 +1,29 @@
+# Secrets / environnement
+.env
+*.env
+!.env.example
+
+# Environnement virtuel Python
+env/
+venv/
+.venv/
+
+# Bytecode / cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django
+media/
+staticfiles/
+db.sqlite3
+
+# Éditeur (VSCode Local History)
+.history/
+
+# Logs
+*.log
+
+# Divers OS/IDE
+.DS_Store
+Thumbs.db

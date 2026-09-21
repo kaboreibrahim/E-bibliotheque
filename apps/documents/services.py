@@ -134,6 +134,27 @@ class DocumentService:
         )
         return self.get_document(str(document.pk))
 
+    def update_document(
+        self,
+        *,
+        document_id: str,
+        data: dict,
+        modifie_par,
+        ip_address: str | None = None,
+        user_agent: str = "",
+    ) -> Document:
+        document = self.get_document(document_id)
+        document = self.repo.update(document, **data)
+        HistoriqueActionService.log_document(
+            "MODIFICATION",
+            user=modifie_par,
+            document=document,
+            details={"champs_modifies": sorted(data.keys())},
+            ip=ip_address,
+            ua=user_agent,
+        )
+        return self.get_document(str(document.pk))
+
     def ouvrir_document(
         self,
         *,

@@ -53,28 +53,22 @@ class ConsultationSerializer(serializers.ModelSerializer):
 class ConsultationVueCreateSerializer(serializers.Serializer):
     """
     Payload pour enregistrer une vue de document.
+    L'utilisateur est toujours déduit de request.user (jamais du client).
     L'IP et le User-Agent sont extraits de la requête côté vue.
     """
     document = serializers.UUIDField(help_text="UUID du document consulté.")
-    user     = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        help_text="UUID de l'utilisateur (optionnel pour les visiteurs anonymes).",
-    )
 
 
 # ── Création d'une recherche ──────────────────────────────────────────────────
 
 class ConsultationRechercheCreateSerializer(serializers.Serializer):
-    """Payload pour enregistrer une recherche."""
+    """
+    Payload pour enregistrer une recherche.
+    L'utilisateur est toujours déduit de request.user (jamais du client).
+    """
     recherche_query = serializers.CharField(
         max_length=500,
         help_text="Terme saisi dans la barre de recherche.",
-    )
-    user = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-        help_text="UUID de l'utilisateur (optionnel).",
     )
 
     def validate_recherche_query(self, value: str) -> str:

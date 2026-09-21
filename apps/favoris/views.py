@@ -32,17 +32,24 @@ def _get_user_agent(request) -> str:
     return (request.META.get("CLIENT_UA") or request.META.get("HTTP_USER_AGENT") or "")[:500]
 
 
+def _require_own_etudiant_id(request) -> str | None:
+    """UUID du profil etudiant de request.user, ou None si ce n'est pas un etudiant."""
+    etudiant = getattr(request.user, "profil_etudiant", None)
+    return str(etudiant.id) if etudiant else None
+
+
+_NOT_ETUDIANT_RESPONSE = Response(
+    {"detail": "Cette action est reservee aux etudiants."},
+    status=status.HTTP_403_FORBIDDEN,
+)
+
+
 @extend_schema_view(
     list=extend_schema(
-        summary="Lister les favoris",
+        summary="Lister mes favoris",
         tags=["Favoris"],
+        description="Retourne uniquement les favoris de l'etudiant connecte.",
         parameters=[
-            OpenApiParameter(
-                name="etudiant",
-                description="Filtrer par UUID d'etudiant",
-                required=False,
-                type=str,
-            ),
             OpenApiParameter(
                 name="document",
                 description="Filtrer par UUID de document",
@@ -71,18 +78,25 @@ class FavoriViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request):
-        etudiant_id = request.query_params.get("etudiant")
+        etudiant_id = _require_own_etudiant_id(request)
+        if not etudiant_id:
+            return _NOT_ETUDIANT_RESPONSE
         document_id = request.query_params.get("document")
-        qs = _service.list_favoris(etudiant_id=etudiant_id, document_id=document_id)
+        qs = _service.list_favoris(etudiant_id=etudiant_id)
+        if document_id:
+            qs = qs.filter(document_id=document_id)
         return Response(FavoriSerializer(qs, many=True).data)
 
     def create(self, request):
+        etudiant_id = _require_own_etudiant_id(request)
+        if not etudiant_id:
+            return _NOT_ETUDIANT_RESPONSE
         serializer = FavoriCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         vd = serializer.validated_data
         try:
             favori = _service.ajouter_favori(
-                etudiant_id=str(vd["etudiant"]),
+                etudiant_id=etudiant_id,
                 document_id=str(vd["document"]),
                 acteur=request.user,
                 ip_address=_get_client_ip(request),
@@ -93,22 +107,39 @@ class FavoriViewSet(viewsets.ViewSet):
         return Response(FavoriSerializer(favori).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, pk=None):
+        etudiant_id = _require_own_etudiant_id(request)
+        if not etudiant_id:
+            return _NOT_ETUDIANT_RESPONSE
         try:
             favori = _service.get_favori(pk)
         except ValidationError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
+        if str(favori.etudiant_id) != etudiant_id:
+            return Response(
+                {"detail": f"Favori introuvable : {pk}."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         return Response(FavoriSerializer(favori).data)
 
     def destroy(self, request, pk=None):
+        etudiant_id = _require_own_etudiant_id(request)
+        if not etudiant_id:
+            return _NOT_ETUDIANT_RESPONSE
         try:
-            _service.supprimer_favori(
-                pk,
-                acteur=request.user,
-                ip_address=_get_client_ip(request),
-                user_agent=_get_user_agent(request),
-            )
+            favori = _service.get_favori(pk)
         except ValidationError as exc:
             return Response({"detail": exc.message}, status=status.HTTP_404_NOT_FOUND)
+        if str(favori.etudiant_id) != etudiant_id:
+            return Response(
+                {"detail": f"Favori introuvable : {pk}."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        _service.supprimer_favori(
+            pk,
+            acteur=request.user,
+            ip_address=_get_client_ip(request),
+            user_agent=_get_user_agent(request),
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
@@ -123,10 +154,12 @@ class FavoriViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=["post"], url_path="toggle")
     def toggle(self, request):
+        etudiant_id = _require_own_etudiant_id(request)
+        if not etudiant_id:
+            return _NOT_ETUDIANT_RESPONSE
         serializer = FavoriCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         vd = serializer.validated_data
-        etudiant_id = str(vd["etudiant"])
         document_id = str(vd["document"])
         client_ip = _get_client_ip(request)
         user_agent = _get_user_agent(request)
@@ -163,10 +196,9 @@ class FavoriViewSet(viewsets.ViewSet):
         )
 
     @extend_schema(
-        summary="Verifier si un document est en favori",
+        summary="Verifier si un document est dans mes favoris",
         tags=["Favoris"],
         parameters=[
-            OpenApiParameter(name="etudiant", description="UUID de l'etudiant", required=True, type=str),
             OpenApiParameter(name="document", description="UUID du document", required=True, type=str),
         ],
         responses={
@@ -181,12 +213,14 @@ class FavoriViewSet(viewsets.ViewSet):
     )
     @action(detail=False, methods=["get"], url_path="verifier")
     def verifier(self, request):
-        etudiant_id = request.query_params.get("etudiant")
+        etudiant_id = _require_own_etudiant_id(request)
+        if not etudiant_id:
+            return _NOT_ETUDIANT_RESPONSE
         document_id = request.query_params.get("document")
 
-        if not etudiant_id or not document_id:
+        if not document_id:
             return Response(
-                {"detail": "Les parametres 'etudiant' et 'document' sont obligatoires."},
+                {"detail": "Le parametre 'document' est obligatoire."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

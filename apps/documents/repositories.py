@@ -148,5 +148,12 @@ class DocumentRepository:
         return Document.objects.create(**data)
 
     @staticmethod
+    def update(document: Document, **data) -> Document:
+        for field, value in data.items():
+            setattr(document, field, value)
+        document.save()
+        return document
+
+    @staticmethod
     def delete(document: Document) -> None:
         document.delete()

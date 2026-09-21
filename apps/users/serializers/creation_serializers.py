@@ -53,6 +53,8 @@ class EtudiantCreateSerializer(serializers.Serializer):
 
     Le matricule est genere automatiquement.
     Le compte est cree inactif par defaut (activation manuelle requise).
+    La periode de validite (date debut/fin) est heritee automatiquement de
+    l'annee academique marquee courante — non saisissable ici.
     """
 
     first_name = serializers.CharField(
@@ -114,23 +116,13 @@ class EtudiantCreateSerializer(serializers.Serializer):
         required=False,
         help_text="Annee d'inscription. Defaut: annee en cours. Ex: 2025"
     )
-    date_debut_validite = serializers.DateField(
-        required=False,
-        allow_null=True,
-        help_text="Date de debut de validite du compte. Format: YYYY-MM-DD."
-    )
-    date_fin_validite = serializers.DateField(
-        required=False,
-        allow_null=True,
-        help_text="Date de fin de validite du compte. Format: YYYY-MM-DD."
-    )
 
     activer_immediatement = serializers.BooleanField(
         default=False,
         help_text=(
             "Si True, le compte est active immediatement "
-            "et la validite du compte est calculee depuis la periode configuree "
-            "ou, a defaut, depuis la duree standard. "
+            "et la validite du compte est calculee depuis l'annee academique "
+            "courante, ou, a defaut, depuis la duree standard. "
             "Si False (defaut), le compte est cree inactif."
         )
     )
@@ -157,7 +149,6 @@ class EtudiantCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'confirm_password': "Les mots de passe ne correspondent pas."
             })
-        _validate_validity_window(data, require_both=True)
         try:
             validate_password(data['password'])
         except Exception as e:

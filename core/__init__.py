@@ -1,5 +1,5 @@
-# project/__init__.py
+# # project/__init__.py
 
-import pymysql
+# import pymysql
 
-pymysql.install_as_MySQLdb()
+# pymysql.install_as_MySQLdb()

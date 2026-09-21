@@ -47,9 +47,8 @@ class FavoriSerializer(serializers.ModelSerializer):
 class FavoriCreateSerializer(serializers.Serializer):
     """
     Sérialisation dédiée à la création d'un favori.
-    Utilisé en POST pour valider uniquement les UUID nécessaires.
+    L'étudiant est toujours déduit de request.user (jamais du client).
     """
-    etudiant = serializers.UUIDField()
     document = serializers.UUIDField()
 
 

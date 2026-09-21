@@ -25,6 +25,7 @@ from apps.documents.serializers import (
     DocumentDashboardStatsSerializer,
     DocumentOpenResponseSerializer,
     DocumentSerializer,
+    DocumentUpdateSerializer,
     TypeDocumentSerializer,
 )
 from apps.documents.services import DocumentService
@@ -214,6 +215,16 @@ DOCUMENT_CREATE_REQUEST_EXAMPLE = OpenApiExample(
         "ue": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
         "annee_academique_debut": 2025,
         "auteur": "Sujet Session 1",
+    },
+)
+
+DOCUMENT_UPDATE_REQUEST_EXAMPLE = OpenApiExample(
+    "Payload modification document (PATCH)",
+    request_only=True,
+    value={
+        "title": "Sujet d examen droit civil (corrige)",
+        "description": "Session normale 2025 - version corrigee",
+        "annee_academique_debut": 2025,
     },
 )
 
@@ -487,6 +498,56 @@ class TypeDocumentViewSet(viewsets.ModelViewSet):
         },
         examples=[DOCUMENT_RESPONSE_EXAMPLE, DOCUMENT_ERROR_EXAMPLE],
     ),
+    update=extend_schema(
+        summary="Modifier un document (PUT)",
+        tags=["Documents"],
+        parameters=[DOCUMENT_ID_PARAMETER],
+        request=DocumentUpdateSerializer,
+        description=(
+            "Modifie les metadonnees d'un document existant. Tous les champs sont "
+            "optionnels : seuls ceux fournis sont mis a jour. Le champ `file_path` "
+            "est optionnel et permet de remplacer le fichier existant. "
+            "Reserve aux administrateurs et aux bibliothecaires ayant "
+            "`peut_gerer_documents = true`."
+        ),
+        responses={
+            200: OpenApiResponse(
+                response=DocumentSerializer,
+                description="Document mis a jour.",
+            ),
+            400: OpenApiResponse(description="Donnees invalides."),
+            403: OpenApiResponse(description="Permission insuffisante."),
+            404: OpenApiResponse(
+                response=DOCUMENT_ERROR_RESPONSE,
+                description="Document introuvable.",
+            ),
+        },
+        examples=[DOCUMENT_UPDATE_REQUEST_EXAMPLE, DOCUMENT_RESPONSE_EXAMPLE, DOCUMENT_ERROR_EXAMPLE],
+    ),
+    partial_update=extend_schema(
+        summary="Modifier partiellement un document (PATCH)",
+        tags=["Documents"],
+        parameters=[DOCUMENT_ID_PARAMETER],
+        request=DocumentUpdateSerializer,
+        description=(
+            "Modifie partiellement les metadonnees d'un document existant. "
+            "Reserve aux administrateurs et aux bibliothecaires ayant "
+            "`peut_gerer_documents = true`."
+        ),
+        responses={
+            200: OpenApiResponse(
+                response=DocumentSerializer,
+                description="Document mis a jour.",
+            ),
+            400: OpenApiResponse(description="Donnees invalides."),
+            403: OpenApiResponse(description="Permission insuffisante."),
+            404: OpenApiResponse(
+                response=DOCUMENT_ERROR_RESPONSE,
+                description="Document introuvable.",
+            ),
+        },
+        examples=[DOCUMENT_UPDATE_REQUEST_EXAMPLE, DOCUMENT_RESPONSE_EXAMPLE, DOCUMENT_ERROR_EXAMPLE],
+    ),
     destroy=extend_schema(
         summary="Supprimer un document (soft delete)",
         tags=["Documents"],
@@ -512,7 +573,13 @@ class DocumentViewSet(viewsets.ViewSet):
     parser_classes = [MultiPartParser, FormParser]
 
     def get_permissions(self):
-        if self.action in {"create", "destroy", "stats_dashboard"}:
+        if self.action in {
+            "create",
+            "update",
+            "partial_update",
+            "destroy",
+            "stats_dashboard",
+        }:
             return [IsAuthenticated(), CanManageDocuments()]
         return [IsAuthenticated()]
 
@@ -579,6 +646,46 @@ class DocumentViewSet(viewsets.ViewSet):
             context={"request": request},
         )
         return Response(serializer.data)
+
+    def update(self, request, pk=None):
+        return self._update(request, pk, partial=False)
+
+    def partial_update(self, request, pk=None):
+        return self._update(request, pk, partial=True)
+
+    def _update(self, request, pk, partial):
+        try:
+            document = _service.get_document(pk, user=request.user)
+        except ValidationError as exc:
+            return Response(
+                {"detail": exc.message},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = DocumentUpdateSerializer(
+            instance=document,
+            data=request.data,
+            partial=partial,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            updated_document = _service.update_document(
+                document_id=pk,
+                data=serializer.validated_data,
+                modifie_par=request.user,
+                ip_address=_get_client_ip(request),
+                user_agent=_get_user_agent(request),
+            )
+        except ValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or {"detail": exc.messages}
+            return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+
+        read_serializer = DocumentSerializer(
+            updated_document,
+            context={"request": request},
+        )
+        return Response(read_serializer.data)
 
     @extend_schema(
         summary="Statistiques dashboard des documents",
