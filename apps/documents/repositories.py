@@ -1,7 +1,7 @@
 """
 apps/documents/repositories.py
 """
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Q, QuerySet, Sum
 
 from apps.documents.models import Document, DocumentStorageConfiguration
 
@@ -116,27 +116,24 @@ class DocumentRepository:
         allowed_specialite_name: str | None = None,
     ) -> dict[str, int]:
         queryset = DocumentRepository._apply_student_scope(
-            Document.objects.only("id", "file_path"),
+            Document.objects.only("id", "file_size"),
             allowed_level_names=allowed_level_names,
             allowed_filiere_id=allowed_filiere_id,
             allowed_specialite_name=allowed_specialite_name,
         )
 
-        documents_count = queryset.count()
-        documents_with_file_count = 0
-        total_file_size = 0
-
-        for document in queryset.iterator():
-            file_size = document.file_size
-            if file_size is None:
-                continue
-            documents_with_file_count += 1
-            total_file_size += file_size
+        # PERF-001 : agregation SQL (file_size est precalcule a chaque save())
+        # au lieu d'un stat() disque par document dans une boucle Python.
+        aggregates = queryset.aggregate(
+            documents_count=Count("id"),
+            documents_with_file_count=Count("id", filter=Q(file_size__isnull=False)),
+            total_file_size=Sum("file_size"),
+        )
 
         return {
-            "documents_count": documents_count,
-            "documents_with_file_count": documents_with_file_count,
-            "total_file_size": total_file_size,
+            "documents_count": aggregates["documents_count"],
+            "documents_with_file_count": aggregates["documents_with_file_count"],
+            "total_file_size": aggregates["total_file_size"] or 0,
         }
 
     @staticmethod

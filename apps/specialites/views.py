@@ -14,6 +14,7 @@ from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.documents.permissions import CanManageDocuments
 from apps.specialites.serializers import SpecialiteSerializer
 from apps.specialites.services import SpecialiteService
 
@@ -145,6 +146,11 @@ SPECIALITE_ID_PARAMETER = OpenApiParameter(
 )
 class SpecialiteViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in {"create", "update", "partial_update", "destroy"}:
+            return [IsAuthenticated(), CanManageDocuments()]
+        return [IsAuthenticated()]
 
     def list(self, request):
         niveau_id = request.query_params.get("niveau")

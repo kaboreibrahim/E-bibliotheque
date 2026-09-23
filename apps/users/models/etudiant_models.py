@@ -225,6 +225,14 @@ class Etudiant(SafeDeleteModel):
             )
 
     def save(self, *args, **kwargs):
+        if self._state.adding and not self.date_debut_validite and not self.date_fin_validite:
+            from apps.annee_academique.models import AnneeAcademique
+
+            annee_courante = AnneeAcademique.get_courante()
+            if annee_courante:
+                self.date_debut_validite = annee_courante.date_debut
+                self.date_fin_validite = annee_courante.date_fin
+
         self.full_clean()
 
         if self.fenetre_validite_configuree:

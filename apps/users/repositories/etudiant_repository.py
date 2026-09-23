@@ -48,7 +48,7 @@ class EtudiantRepository:
     @staticmethod
     def get_all(filters: dict = None) -> QuerySet:
         qs = Etudiant.objects.select_related(
-            'user', 'filiere', 'niveau', 'specialite'
+            'user', 'filiere', 'niveau', 'specialite', 'derniere_reactivation_par'
         ).all()
         if filters:
             qs = qs.filter(**filters)

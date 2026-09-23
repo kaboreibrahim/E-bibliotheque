@@ -36,6 +36,7 @@ from apps.consultations.serializers import (
     TopRechercheSerializer,
 )
 from apps.consultations.services import ConsultationService
+from core.pagination import StandardResultsPagination
 
 _service = ConsultationService()
 
@@ -80,6 +81,7 @@ class ConsultationViewSet(viewsets.ViewSet):
     """
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsPagination
 
     # ── GET /consultations/ ───────────────────────────────────────────────────
     def list(self, request):
@@ -99,7 +101,9 @@ class ConsultationViewSet(viewsets.ViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             qs = qs.filter(type_consultation=type_c)
-        return Response(ConsultationSerializer(qs, many=True).data)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response(ConsultationSerializer(page, many=True).data)
 
     # ── GET /consultations/{id}/ ──────────────────────────────────────────────
     def retrieve(self, request, pk=None):

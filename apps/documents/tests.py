@@ -398,10 +398,11 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
         response = self.client.get("/api/documents/?search=procedure")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["id"], str(self.document.pk))
-        self.assertEqual(response.data[0]["file_size"], 4)
-        self.assertNotIn("file_base64", response.data[0])
+        results = response.data["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], str(self.document.pk))
+        self.assertEqual(results[0]["file_size"], 4)
+        self.assertNotIn("file_base64", results[0])
 
     def test_student_list_is_limited_to_his_specialite_and_lower_levels(self):
         document_l2 = self._create_document(
@@ -447,7 +448,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
         response = self.client.get("/api/documents/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        returned_ids = {item["id"] for item in response.data}
+        returned_ids = {item["id"] for item in response.data["results"]}
         self.assertSetEqual(
             returned_ids,
             {str(self.document.pk), str(document_l2.pk)},
@@ -490,7 +491,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
         response = self.client.get("/api/documents/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        returned_ids = {item["id"] for item in response.data}
+        returned_ids = {item["id"] for item in response.data["results"]}
         self.assertSetEqual(
             returned_ids,
             {
@@ -554,7 +555,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
         detail_response = self.client.get(f"/api/documents/{document_m2.pk}/")
 
         self.assertEqual(list_response.status_code, status.HTTP_200_OK)
-        returned_ids = {item["id"] for item in list_response.data}
+        returned_ids = {item["id"] for item in list_response.data["results"]}
         self.assertSetEqual(
             returned_ids,
             {str(self.document.pk), str(document_l2.pk), str(document_m2.pk)},
@@ -572,7 +573,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
                 "type": TypeDocument.EXAMEN,
                 "file_path": SimpleUploadedFile(
                     "examen.pdf",
-                    b"exam",
+                    b"%PDF-exam",
                     content_type="application/pdf",
                 ),
                 "description": "Examen final",
@@ -588,11 +589,11 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["title"], "Sujet d examen")
         self.assertEqual(str(response.data["ajoute_par"]), str(self.admin.pk))
-        self.assertEqual(response.data["file_size"], 4)
+        self.assertEqual(response.data["file_size"], 9)
         self.assertTrue(response.data["file_stream_url"].endswith("/fichier/"))
         self.assertEqual(Document.objects.count(), 2)
         created_document = Document.objects.exclude(pk=self.document.pk).get()
-        self.assertEqual(self._read_document_bytes(created_document), b"exam")
+        self.assertEqual(self._read_document_bytes(created_document), b"%PDF-exam")
         self.assertEqual(created_document.file_name, "examen.pdf")
         self.assertEqual(
             created_document.file_path.name,
@@ -686,7 +687,12 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
         )
 
     def test_list_type_documents_returns_existing_types(self):
-        self.client.force_authenticate(user=self.user)
+        # Authentifie en admin : un etudiant sans niveau_id fait filtrer la
+        # liste par son propre niveau (TypeDocumentViewSet.get_queryset()),
+        # et les types crees dans setUp() ne sont lies a aucun niveau. Ce test
+        # verifie une capacite generale (les types existent bien), pas ce
+        # filtrage specifique.
+        self.client.force_authenticate(user=self.admin)
 
         response = self.client.get("/api/documents/types/")
 
@@ -718,7 +724,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
                 "type": "rapport",
                 "file_path": SimpleUploadedFile(
                     "rapport-stage.pdf",
-                    b"rapport-stage",
+                    b"%PDF-rapport-stage",
                     content_type="application/pdf",
                 ),
                 "file_name": "rapport-stage.pdf",
@@ -737,7 +743,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
         self.assertEqual(response.data["type_display"], "Rapport")
         created_document = Document.objects.get(title="Rapport de stage")
         self.assertEqual(created_document.type, custom_type)
-        self.assertEqual(self._read_document_bytes(created_document), b"rapport-stage")
+        self.assertEqual(self._read_document_bytes(created_document), b"%PDF-rapport-stage")
 
     def test_list_documents_accepts_custom_type_filter(self):
         custom_type = TypeDocument.objects.create(code="RAPPORT", name="Rapport")
@@ -753,7 +759,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
         response = self.client.get("/api/documents/?type=rapport")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([item["id"] for item in response.data], [str(custom_document.pk)])
+        self.assertEqual([item["id"] for item in response.data["results"]], [str(custom_document.pk)])
 
     def test_bibliothecaire_with_document_permission_can_create_document(self):
         self.client.force_authenticate(user=self.biblio)
@@ -765,7 +771,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
                 "type": TypeDocument.MEMOIRE,
                 "file_path": SimpleUploadedFile(
                     "memoire.pdf",
-                    b"memoire",
+                    b"%PDF-memoire",
                     content_type="application/pdf",
                 ),
                 "description": "Memoire de master",

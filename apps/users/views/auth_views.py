@@ -8,6 +8,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.throttling import ScopedRateThrottle
 
 from drf_spectacular.utils import (
     extend_schema, OpenApiExample, OpenApiResponse, inline_serializer
@@ -114,6 +115,8 @@ class EtudiantLoginView(APIView):
     Si les identifiants sont valides, retourne user_id pour l'étape 2 (TOTP).
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     @extend_schema(
         tags=['Auth — Étudiant'],
@@ -248,6 +251,8 @@ class EtudiantTOTPVerifyView(APIView):
     Retourne les tokens JWT si le code est correct.
     """
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'totp'
 
     @extend_schema(
         tags=['Auth — Étudiant'],
@@ -342,6 +347,8 @@ Authorization: Bearer <access_token>
 class PersonneExterneLoginView(APIView):
     """POST /api/auth/personne-externe/login/ — Étape 1."""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     @extend_schema(
         tags=['Auth — Personne externe'],
@@ -446,6 +453,8 @@ POST /api/auth/personne-externe/totp/verify/ ← étape 2 (TOTP obligatoire)
 class PersonneExterneTOTPVerifyView(APIView):
     """POST /api/auth/personne-externe/totp/verify/ — Étape 2."""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'totp'
 
     @extend_schema(
         tags=['Auth — Personne externe'],
@@ -504,6 +513,8 @@ class PersonneExterneTOTPVerifyView(APIView):
 class BibliothecaireLoginView(APIView):
     """POST /api/auth/bibliothecaire/login/ — Étape 1"""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     @extend_schema(
         tags=['Auth — Bibliothécaire'],
@@ -604,6 +615,8 @@ POST /api/auth/bibliothecaire/totp/verify/ ← étape 2 (TOTP obligatoire)
 class BibliothecaireTOTPVerifyView(APIView):
     """POST /api/auth/bibliothecaire/totp/verify/ — Étape 2"""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'totp'
 
     @extend_schema(
         tags=['Auth — Bibliothécaire'],
@@ -667,6 +680,8 @@ class BibliothecaireTOTPVerifyView(APIView):
 class AdminLoginView(APIView):
     """POST /api/auth/admin/login/ — Étape 1"""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     @extend_schema(
         tags=['Auth — Administrateur'],
@@ -757,6 +772,8 @@ POST /api/auth/admin/totp/verify/  ← étape 2 (TOTP obligatoire)
 class AdminTOTPVerifyView(APIView):
     """POST /api/auth/admin/totp/verify/ — Étape 2"""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'totp'
 
     @extend_schema(
         tags=['Auth — Administrateur'],
@@ -1145,6 +1162,8 @@ class LogoutView(APIView):
 class EnseignantChercheurLoginView(APIView):
     """POST /api/auth/enseignant-chercheur/login/ — Étape 1."""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     @extend_schema(
         tags=['Auth — Enseignant-Chercheur'],
@@ -1172,6 +1191,8 @@ class EnseignantChercheurLoginView(APIView):
 class EnseignantChercheurTOTPVerifyView(APIView):
     """POST /api/auth/enseignant-chercheur/totp/verify/ — Étape 2."""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'totp'
 
     @extend_schema(
         tags=['Auth — Enseignant-Chercheur'],
@@ -1202,6 +1223,8 @@ class EnseignantChercheurTOTPVerifyView(APIView):
 class ChercheurLoginView(APIView):
     """POST /api/auth/chercheur/login/ — Étape 1."""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     @extend_schema(
         tags=['Auth — Chercheur'],
@@ -1229,6 +1252,8 @@ class ChercheurLoginView(APIView):
 class ChercheurTOTPVerifyView(APIView):
     """POST /api/auth/chercheur/totp/verify/ — Étape 2."""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'totp'
 
     @extend_schema(
         tags=['Auth — Chercheur'],

@@ -20,6 +20,7 @@ from apps.favoris.serializers import (
     FavoriToggleResponseSerializer,
 )
 from apps.favoris.services import FavoriService
+from core.pagination import StandardResultsPagination
 
 _service = FavoriService()
 
@@ -76,6 +77,7 @@ _NOT_ETUDIANT_RESPONSE = Response(
 class FavoriViewSet(viewsets.ViewSet):
     serializer_class = FavoriSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = StandardResultsPagination
 
     def list(self, request):
         etudiant_id = _require_own_etudiant_id(request)
@@ -85,7 +87,9 @@ class FavoriViewSet(viewsets.ViewSet):
         qs = _service.list_favoris(etudiant_id=etudiant_id)
         if document_id:
             qs = qs.filter(document_id=document_id)
-        return Response(FavoriSerializer(qs, many=True).data)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(qs, request, view=self)
+        return paginator.get_paginated_response(FavoriSerializer(page, many=True).data)
 
     def create(self, request):
         etudiant_id = _require_own_etudiant_id(request)

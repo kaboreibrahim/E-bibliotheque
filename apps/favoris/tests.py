@@ -58,7 +58,7 @@ class FavoriIdorTests(APITestCase):
         response = self.client.get("/api/favoris/favoris/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        ids = [item["id"] for item in response.data]
+        ids = [item["id"] for item in response.data["results"]]
         self.assertNotIn(str(self.favori_b.pk), ids)
 
     def test_etudiant_ne_peut_pas_lire_le_favori_dun_autre(self):

@@ -54,7 +54,7 @@ class ConsultationIdorTests(APITestCase):
         response = self.client.get("/api/consultations/consultations/")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        ids = [item["id"] for item in response.data]
+        ids = [item["id"] for item in response.data["results"]]
         self.assertNotIn(str(self.consultation_b.pk), ids)
 
     def test_utilisateur_ne_peut_pas_lire_une_consultation_dun_autre(self):
@@ -93,7 +93,7 @@ class ConsultationIdorTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         for item in response.data:
-            self.assertEqual(item["user"], str(self.user_a.pk))
+            self.assertEqual(str(item["user"]), str(self.user_a.pk))
 
     def test_vue_est_toujours_attribuee_a_lutilisateur_connecte(self):
         self.client.force_authenticate(user=self.user_a)

@@ -9,6 +9,7 @@ from apps.documents.models import Document, TypeDocument
 from apps.documents.utils import (
     build_document_file_name,
     extract_document_file_metadata,
+    validate_document_upload,
 )
 from apps.filiere.models import Filiere
 from apps.niveau.models import Niveau
@@ -192,7 +193,10 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
     file_mime_type = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text="Type MIME du document. Ex: application/pdf.",
+        help_text=(
+            "Ignore : le type MIME est toujours determine cote serveur a partir "
+            "du contenu reel du fichier (SEC-008)."
+        ),
     )
     description = serializers.CharField(
         required=False,
@@ -272,9 +276,19 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
                 }
             )
 
-        detected_file_name, detected_mime_type = extract_document_file_metadata(upload)
+        try:
+            server_mime_type = validate_document_upload(upload)
+        except DjangoValidationError as exc:
+            detail = exc.message_dict
+            if not isinstance(detail, Mapping):
+                detail = {"detail": exc.messages}
+            raise serializers.ValidationError(detail)
+
+        detected_file_name, _ = extract_document_file_metadata(upload)
         attrs["file_name"] = Path(attrs.get("file_name") or detected_file_name).name
-        attrs["file_mime_type"] = attrs.get("file_mime_type") or detected_mime_type
+        # SEC-008 : le type MIME est toujours celui detecte cote serveur a partir
+        # de la signature reelle du fichier, jamais celui fourni par le client.
+        attrs["file_mime_type"] = server_mime_type
 
         if not attrs.get("file_name"):
             attrs["file_name"] = build_document_file_name(
@@ -320,7 +334,10 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
     file_mime_type = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text="Type MIME du document. Ex: application/pdf.",
+        help_text=(
+            "Ignore : le type MIME est toujours determine cote serveur a partir "
+            "du contenu reel du fichier (SEC-008)."
+        ),
     )
     description = serializers.CharField(
         required=False,
@@ -394,9 +411,18 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
         upload = attrs.get("file_path")
 
         if upload is not None:
-            detected_file_name, detected_mime_type = extract_document_file_metadata(upload)
+            try:
+                server_mime_type = validate_document_upload(upload)
+            except DjangoValidationError as exc:
+                detail = exc.message_dict
+                if not isinstance(detail, Mapping):
+                    detail = {"detail": exc.messages}
+                raise serializers.ValidationError(detail)
+
+            detected_file_name, _ = extract_document_file_metadata(upload)
             attrs["file_name"] = Path(attrs.get("file_name") or detected_file_name).name
-            attrs["file_mime_type"] = attrs.get("file_mime_type") or detected_mime_type
+            # SEC-008 : type MIME toujours determine cote serveur, jamais par le client.
+            attrs["file_mime_type"] = server_mime_type
         elif attrs.get("file_name"):
             attrs["file_name"] = Path(attrs["file_name"]).name
 

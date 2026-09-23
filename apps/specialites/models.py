@@ -94,12 +94,18 @@ class Specialite(SafeDeleteModel):
 
     @property
     def nb_etudiants(self):
+        if hasattr(self, '_nb_etudiants'):
+            return self._nb_etudiants
         return self.etudiants.count()
 
     @property
     def nb_documents(self):
+        if hasattr(self, '_nb_documents'):
+            return self._nb_documents
         return self.documents.count()
 
     @property
     def nb_ues(self):
+        if hasattr(self, '_nb_ues'):
+            return self._nb_ues
         return self.ues.count()

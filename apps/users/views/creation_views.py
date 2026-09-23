@@ -1119,11 +1119,25 @@ class BibliothecaireListView(APIView):
     """GET /api/bibliothecaires/ — Liste des bibliothécaires [Admin]"""
     permission_classes = [IsAuthenticated, IsAdministrateur]
 
-    @extend_schema(tags=['Bibliothécaires'], summary='Lister les bibliothécaires')
+    @extend_schema(
+        tags=['Bibliothécaires'],
+        summary='Lister les bibliothécaires',
+        description="Retourne la liste paginée des bibliothécaires.",
+    )
     def get(self, request):
-        qs         = BibliothecaireRepository.get_all()
-        serializer = BibliothecaireDetailSerializer(qs, many=True)
-        return Response({'success': True, 'count': qs.count(), 'results': serializer.data})
+        qs = BibliothecaireRepository.get_all()
+
+        page      = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 20))
+        total     = qs.count()
+        start     = (page - 1) * page_size
+
+        serializer = BibliothecaireDetailSerializer(qs[start:start + page_size], many=True)
+        return Response({
+            'success': True, 'count': total, 'page': page,
+            'pages': (total + page_size - 1) // page_size,
+            'results': serializer.data
+        })
 
 
 class BibliothecaireDetailView(APIView):

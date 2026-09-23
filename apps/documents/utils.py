@@ -1,10 +1,39 @@
 import mimetypes
 from pathlib import Path
 
+from django.core.exceptions import ValidationError
 from django.utils.text import slugify
 
 DEFAULT_DOCUMENT_MIME_TYPE = "application/octet-stream"
 BYTES_PER_MEGABYTE = 1024 * 1024
+
+# SEC-008 : types de documents autorises a l'upload (PDF, Word, Images —
+# decision du developpeur : pas de PowerPoint). La cle est l'extension
+# normalisee, la valeur le type MIME impose cote serveur (jamais celui
+# fourni par le client).
+ALLOWED_DOCUMENT_UPLOAD_TYPES: dict[str, str] = {
+    ".pdf": "application/pdf",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+}
+
+# Signatures binaires (magic bytes) attendues en tete de fichier, pour
+# detecter un fichier dont le contenu ne correspond pas a son extension
+# (ex: un .html renomme en .pdf). .docx est un conteneur ZIP (PK\x03\x04) ;
+# .doc est un fichier OLE Compound File (legacy Office).
+_DOCUMENT_SIGNATURES: dict[str, tuple[bytes, ...]] = {
+    ".pdf": (b"%PDF-",),
+    ".png": (b"\x89PNG\r\n\x1a\n",),
+    ".jpg": (b"\xff\xd8\xff",),
+    ".jpeg": (b"\xff\xd8\xff",),
+    ".docx": (b"PK\x03\x04",),
+    ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+}
+
+MAX_DOCUMENT_UPLOAD_SIZE_BYTES = 20 * BYTES_PER_MEGABYTE
 
 
 def _build_storage_segment(value: str | None, fallback: str) -> str:
@@ -79,3 +108,50 @@ def bytes_to_megabytes(size: int | None) -> float:
     if not size:
         return 0.0
     return round(size / BYTES_PER_MEGABYTE, 2)
+
+
+def validate_document_upload(upload) -> str:
+    """Valide la taille et le type reel (signature binaire) d'un fichier
+    televerse. Retourne le type MIME impose cote serveur (jamais celui du
+    client) si valide, leve ValidationError sinon.
+    """
+    if upload.size is not None and upload.size > MAX_DOCUMENT_UPLOAD_SIZE_BYTES:
+        raise ValidationError(
+            {
+                "file_path": (
+                    "Le fichier depasse la taille maximale autorisee "
+                    f"({format_file_size(MAX_DOCUMENT_UPLOAD_SIZE_BYTES)})."
+                )
+            }
+        )
+
+    file_name = Path(getattr(upload, "name", "") or "").name
+    extension = Path(file_name).suffix.lower()
+
+    if extension not in ALLOWED_DOCUMENT_UPLOAD_TYPES:
+        allowed = ", ".join(sorted(ALLOWED_DOCUMENT_UPLOAD_TYPES))
+        raise ValidationError(
+            {
+                "file_path": (
+                    f"Type de fichier non autorise ({extension or 'inconnu'}). "
+                    f"Formats acceptes : {allowed}."
+                )
+            }
+        )
+
+    upload.seek(0)
+    header = upload.read(8)
+    upload.seek(0)
+
+    signatures = _DOCUMENT_SIGNATURES.get(extension, ())
+    if signatures and not any(header.startswith(sig) for sig in signatures):
+        raise ValidationError(
+            {
+                "file_path": (
+                    "Le contenu du fichier ne correspond pas a son extension "
+                    f"({extension}). Le fichier semble corrompu ou usurpe."
+                )
+            }
+        )
+
+    return ALLOWED_DOCUMENT_UPLOAD_TYPES[extension]

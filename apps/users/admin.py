@@ -338,6 +338,7 @@ class EtudiantAdmin(ExportCsvMixin, admin.ModelAdmin):
         'annee_inscription',
         'date_debut_validite',
         'date_fin_validite',
+        'jours_restants_display',
     )
     list_filter   = (
         'filiere',
@@ -364,6 +365,15 @@ class EtudiantAdmin(ExportCsvMixin, admin.ModelAdmin):
     @admin.display(description="Matricule")
     def matricule(self, obj):
         return obj.matricule or "—"
+
+    @admin.display(description="Jours restants")
+    def jours_restants_display(self, obj):
+        jours = obj.jours_restants
+        if jours is None:
+            return "—"
+        if jours < 0:
+            return f"Expiré depuis {abs(jours)} j"
+        return f"{jours} j"
 
 
 @admin.register(PersonneExterne)

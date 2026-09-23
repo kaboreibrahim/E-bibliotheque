@@ -11,9 +11,18 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 from decouple import Csv, config
 from django.contrib.messages import constants as messages
+
+# Sous manage.py test, le cache de throttling (SEC-007) n'est pas reinitialise
+# entre les tests : des suites qui font plusieurs connexions en sequence
+# (ex: test_first_login_totp_api.py) finissent par se faire bloquer par la
+# limite normale. Desactive le throttle pendant les tests ; le comportement
+# reel (429 au-dela du seuil) reste verifie par un test dedie qui force sa
+# propre limite via @override_settings.
+RUNNING_TESTS = 'test' in sys.argv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 from datetime import timedelta
@@ -156,6 +165,15 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ),
+    # SEC-007 : rate limiting sur les endpoints d'authentification (login + TOTP).
+    # Applique uniquement aux vues qui declarent throttle_classes/throttle_scope,
+    # pas globalement a toute l'API. Desactive sous manage.py test (voir
+    # RUNNING_TESTS ci-dessus) pour ne pas casser les suites existantes qui
+    # enchainent plusieurs connexions ; un test dedie verifie le vrai seuil.
+    'DEFAULT_THROTTLE_RATES': {
+        'login': '10000/min' if RUNNING_TESTS else '5/min',
+        'totp': '10000/min' if RUNNING_TESTS else '5/min',
+    },
 }
 
 SPECTACULAR_SETTINGS = {
@@ -238,7 +256,7 @@ WSGI_APPLICATION = 'core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# Pour PostgreSQL (optionnel)
+#Pour PostgreSQL (optionnel)
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
@@ -359,3 +377,62 @@ EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=True, cast=bool)
 EMAIL_USE_TLS = False
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+
+# =============================================================================
+# 📋  LOGGING (TECH-004)
+# Fichier local avec rotation — adapte a un hebergement cPanel, aucune
+# dependance externe. Sans ceci, une erreur 500 en production (DEBUG=False)
+# ne laisse aucune trace consultable nulle part.
+# =============================================================================
+
+LOG_DIR = BASE_DIR / 'logs'
+LOG_DIR.mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{asctime} [{levelname}] {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'level': 'ERROR',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': LOG_DIR / 'django.log',
+            'maxBytes': 5 * 1024 * 1024,  # 5 Mo
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARNING',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        # Erreurs serveur (500) et exceptions non gerees pendant une requete.
+        'django.request': {
+            'handlers': ['console', 'file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        # Erreurs de securite Django (hote invalide, CSRF, etc.).
+        'django.security': {
+            'handlers': ['console', 'file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}

@@ -14,6 +14,7 @@ from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.documents.permissions import CanManageDocuments
 from apps.niveau.serializers import NiveauSerializer
 from apps.niveau.services import NiveauService
 
@@ -123,6 +124,11 @@ NIVEAU_ID_PARAMETER = OpenApiParameter(
 )
 class NiveauViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in {"create", "update", "partial_update", "destroy"}:
+            return [IsAuthenticated(), CanManageDocuments()]
+        return [IsAuthenticated()]
 
     def list(self, request):
         filiere_id = request.query_params.get("filiere")

@@ -16,6 +16,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.documents.permissions import CanManageDocuments
 from apps.filiere.serializers import FiliereMinimalSerializer, FiliereSerializer
 from apps.niveau.serializers import NiveauSerializer
 from apps.filiere.services import FiliereService
@@ -162,8 +163,15 @@ FILIERE_ID_PARAMETER = OpenApiParameter(
 class FiliereViewSet(viewsets.ViewSet):
     """
     CRUD complet sur les filières universitaires.
+    Ecriture reservee aux administrateurs et aux bibliothecaires autorises
+    a gerer les documents.
     """
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in {"create", "update", "partial_update", "destroy"}:
+            return [IsAuthenticated(), CanManageDocuments()]
+        return [IsAuthenticated()]
 
     # ── GET /filieres/ ────────────────────────────────────────────────────────
     def list(self, request):

@@ -44,6 +44,16 @@ class Document(DocumentUE, SafeDeleteModel):
         blank=True,
         verbose_name="Type MIME",
     )
+    file_size = models.BigIntegerField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Taille du fichier (octets)",
+        help_text=(
+            "Calculee automatiquement a chaque sauvegarde a partir du fichier "
+            "reellement stocke (PERF-001, evite un appel disque a chaque lecture)."
+        ),
+    )
     description = models.TextField(blank=True, verbose_name="Description")
 
     ajoute_par = models.ForeignKey(
@@ -66,16 +76,6 @@ class Document(DocumentUE, SafeDeleteModel):
     def has_file_content(self) -> bool:
         return bool(self.file_path)
 
-    @property
-    def file_size(self) -> int | None:
-        if not self.file_path:
-            return None
-
-        try:
-            return self.file_path.size
-        except (FileNotFoundError, OSError, ValueError):
-            return None
-
     def clean(self):
         if not self.type_id:
             raise ValidationError({"type": "Le type de document est obligatoire."})
@@ -97,6 +97,11 @@ class Document(DocumentUE, SafeDeleteModel):
 
         if not self.file_mime_type:
             self.file_mime_type = detected_mime_type or DEFAULT_DOCUMENT_MIME_TYPE
+
+        try:
+            self.file_size = self.file_path.size
+        except (FileNotFoundError, OSError, ValueError):
+            self.file_size = None
 
     @property
     def type_code(self) -> str:

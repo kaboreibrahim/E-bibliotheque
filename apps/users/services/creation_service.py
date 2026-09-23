@@ -94,7 +94,6 @@ class EtudiantCreationService:
           activer_immediatement (bool)
         """
         import pyotp
-        from apps.annee_academique.models import AnneeAcademique
         from apps.filiere.models import Filiere
         from apps.niveau.models import Niveau
         from apps.specialites.models import Specialite
@@ -205,20 +204,16 @@ class EtudiantCreationService:
             issuer_name="Bibliothèque Universitaire CI"
         )
 
-        # ── Periode de validite : toujours heritee de l'annee academique courante ──
-        annee_courante = AnneeAcademique.get_courante()
-        date_debut_validite = annee_courante.date_debut if annee_courante else None
-        date_fin_validite = annee_courante.date_fin if annee_courante else None
-
         # ── Créer le profil Etudiant ──────────────────────────────────────────
+        # La periode de validite (date_debut_validite/date_fin_validite) est
+        # heritee automatiquement de l'annee academique courante par
+        # Etudiant.save() si elle n'est pas fournie ici (voir etudiant_models.py).
         etudiant = EtudiantRepository.create(
             user              = user,
             filiere           = filiere,
             niveau            = niveau,
             specialite        = specialite,
             annee_inscription = data.get('annee_inscription'),
-            date_debut_validite = date_debut_validite,
-            date_fin_validite = date_fin_validite,
         )
 
         # ── Activer si demandé ────────────────────────────────────────────────

@@ -7,7 +7,6 @@ from decimal import Decimal
 
 from django.core.validators import MinValueValidator
 from django.db import models
-from django.db.models import Sum
 from safedelete.models import SOFT_DELETE_CASCADE, SafeDeleteModel
 
 
@@ -42,12 +41,16 @@ class UE(SafeDeleteModel):
 
     @property
     def coef_total(self) -> Decimal:
-        """Retourne la somme des coefficients des ECUE actifs."""
+        """Retourne la somme des coefficients des ECUE actifs.
+
+        Utilise self.ecues.all() (et non .aggregate()) pour reutiliser le
+        cache prefetch_related deja charge par UERepository, evitant une
+        requete SQL supplementaire par UE lors de la serialisation d'une liste.
+        """
         if not self.pk:
             return self.coef or Decimal("0.00")
 
-        total = self.ecues.aggregate(total=Sum("coef"))["total"]
-        return total or Decimal("0.00")
+        return sum((ecue.coef for ecue in self.ecues.all()), Decimal("0.00"))
 
     def sync_coef_from_ecues(self, save: bool = True) -> Decimal:
         """Met a jour le coefficient stocke avec la somme des ECUE."""

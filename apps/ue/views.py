@@ -15,6 +15,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from apps.documents.permissions import CanManageDocuments
 from apps.ue.serializers import ECUESerializer, UESerializer
 from apps.ue.services import ECUEService, UEService
 
@@ -235,6 +236,11 @@ ECUE_ID_PARAMETER = OpenApiParameter(
 class UEViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
+    def get_permissions(self):
+        if self.action in {"create", "update", "partial_update", "destroy"}:
+            return [IsAuthenticated(), CanManageDocuments()]
+        return [IsAuthenticated()]
+
     def list(self, request):
         specialite_id = request.query_params.get("specialite")
         q = request.query_params.get("q", "").strip()
@@ -398,6 +404,11 @@ class UEViewSet(viewsets.ViewSet):
 )
 class ECUEViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in {"create", "update", "partial_update", "destroy"}:
+            return [IsAuthenticated(), CanManageDocuments()]
+        return [IsAuthenticated()]
 
     def list(self, request):
         ue_id = request.query_params.get("ue")

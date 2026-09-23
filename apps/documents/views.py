@@ -30,6 +30,7 @@ from apps.documents.serializers import (
 )
 from apps.documents.services import DocumentService
 from apps.documents.utils import DEFAULT_DOCUMENT_MIME_TYPE
+from core.pagination import StandardResultsPagination
 
 _consultation_service = ConsultationService()
 _service = DocumentService(consultation_service=_consultation_service)
@@ -571,6 +572,7 @@ class DocumentViewSet(viewsets.ViewSet):
     serializer_class = DocumentSerializer
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
+    pagination_class = StandardResultsPagination
 
     def get_permissions(self):
         if self.action in {
@@ -604,12 +606,14 @@ class DocumentViewSet(viewsets.ViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(documents, request, view=self)
         serializer = DocumentSerializer(
-            documents,
+            page,
             many=True,
             context={"request": request},
         )
-        return Response(serializer.data)
+        return paginator.get_paginated_response(serializer.data)
 
     def create(self, request):
         serializer = DocumentCreateSerializer(data=request.data)
