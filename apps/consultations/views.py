@@ -16,6 +16,7 @@ Endpoints exposés :
 from django.core.exceptions import ValidationError
 from drf_spectacular.utils import (
     OpenApiParameter,
+    OpenApiResponse,
     extend_schema,
     extend_schema_view,
     inline_serializer,
@@ -36,6 +37,8 @@ from apps.consultations.serializers import (
     TopRechercheSerializer,
 )
 from apps.consultations.services import ConsultationService
+from apps.consultations.stats_overview import PERIODES_AUTORISEES, build_overview
+from apps.users.permissions import IsAdminOrBibliothecaire
 from core.pagination import StandardResultsPagination
 
 _service = ConsultationService()
@@ -270,6 +273,36 @@ class ConsultationViewSet(viewsets.ViewSet):
         limit = int(request.query_params.get("limit", 10))
         data  = _service.top_recherches(limit)
         return Response(TopRechercheSerializer(data, many=True).data)
+
+    # ── GET /consultations/stats/overview/ ────────────────────────────────────
+    @extend_schema(
+        summary="Agregats du tableau de bord d'administration",
+        tags=["Consultations – Stats"],
+        description=(
+            "Indicateurs cles (avec variation sur la periode precedente), activite "
+            "quotidienne, repartition horaire des lectures, croissance du fonds sur "
+            "12 mois, repartition des documents par type et par niveau, comptes par "
+            "type d'utilisateur. Reserve aux administrateurs et bibliothecaires."
+        ),
+        parameters=[
+            OpenApiParameter(name="jours", description="Periode : 7, 30, 90 ou 365 jours (defaut 30)", required=False, type=int),
+        ],
+        responses={200: OpenApiResponse(description="Agregats du tableau de bord.")},
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="stats/overview",
+        permission_classes=[IsAdminOrBibliothecaire],
+    )
+    def stats_overview(self, request):
+        try:
+            jours = int(request.query_params.get("jours", 30))
+        except (TypeError, ValueError):
+            jours = 30
+        if jours not in PERIODES_AUTORISEES:
+            jours = 30
+        return Response(build_overview(jours))
 
     # ── GET /consultations/en-cours/ ──────────────────────────────────────────
     @extend_schema(
