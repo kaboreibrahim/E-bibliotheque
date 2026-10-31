@@ -18,6 +18,7 @@ import pyotp
 
 from django.core import signing
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare, salted_hmac
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.users.models.user_models import User
@@ -30,6 +31,14 @@ logger = logging.getLogger(__name__)
 TOTP_ISSUER_NAME = "Bibliothèque Universitaire CI"
 TOTP_SETUP_TOKEN_SALT = "users.totp.setup"
 TOTP_SETUP_TOKEN_MAX_AGE_SECONDS = 900
+
+# Jeton de réinitialisation du mot de passe (SEC : reset sans preuve d'OTP).
+# Délivré par /api/auth/otp/verify/ (type password_reset) et exigé par
+# /api/auth/password/reset/confirm/. Il embarque une empreinte du hash du mot
+# de passe actuel : il devient invalide dès que le mot de passe change
+# (usage unique) et expire au bout de 15 minutes.
+PASSWORD_RESET_TOKEN_SALT = "users.password.reset"
+PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS = 900
 
 
 @dataclass
@@ -847,19 +856,42 @@ class CommonAuthService:
             )
 
         CodeVerificationRepository.mark_as_used(code_obj)
+        data = {'type_code': type_code, 'verified': True}
+        if type_code == 'password_reset':
+            # Preuve de vérification à présenter à /password/reset/confirm/
+            data['reset_token'] = _generate_password_reset_token(user)
         return AuthResult(
             success=True,
             message="Code OTP vérifié avec succès.",
-            data={'type_code': type_code, 'verified': True},
+            data=data,
             http_status=200
         )
 
     @staticmethod
-    def reset_password(email: str, new_password: str) -> AuthResult:
-        """Réinitialise le mot de passe (après vérification OTP)."""
+    def reset_password(email: str, new_password: str, reset_token: str) -> AuthResult:
+        """
+        Réinitialise le mot de passe.
+        Exige le `reset_token` délivré par la vérification de l'OTP `password_reset`
+        pour CE compte : sans lui, n'importe qui pourrait changer le mot de passe
+        d'un compte dont il connaît seulement l'email.
+        """
+        invalid = AuthResult(
+            success=False,
+            message="Lien de réinitialisation invalide ou expiré. Recommencez la procédure.",
+            errors={'reset_token': ['Jeton invalide ou expiré.']},
+            http_status=400,
+        )
         user = UserRepository.get_by_email(email)
-        if not user:
-            return AuthResult(success=False, message="Compte introuvable.", http_status=404)
+        if not user or not user.is_active:
+            # Même réponse que pour un jeton invalide : pas d'énumération des comptes
+            return invalid
+        if not _check_password_reset_token(user, reset_token):
+            HAS.log(
+                action=HAS.ACTIONS.OTP_ECHEC, user=user, statut='echec',
+                details={'action': 'reset_password', 'motif': 'jeton invalide ou expiré'}
+            )
+            return invalid
+
         UserRepository.update_password(user, new_password)
         TokenBlacklistRepository.blacklist_all_user_tokens(user)
         HAS.log_utilisateur('MODIF', auteur=user, cible_user=user, details={'action': 'reset_password'})
@@ -971,6 +1003,33 @@ def _prepare_totp_setup_payload(user: User, regenerate_secret: bool = False) -> 
             "4. Confirmez avec le code genere sur /api/auth/totp/confirm/.",
         ],
     }
+
+
+def _password_fingerprint(user: User) -> str:
+    """Empreinte HMAC du hash de mot de passe : change à chaque nouveau mot de passe."""
+    return salted_hmac(PASSWORD_RESET_TOKEN_SALT, user.password or '').hexdigest()[:24]
+
+
+def _generate_password_reset_token(user: User) -> str:
+    return signing.dumps(
+        {'user_id': str(user.id), 'fp': _password_fingerprint(user), 'purpose': 'password_reset'},
+        salt=PASSWORD_RESET_TOKEN_SALT,
+    )
+
+
+def _check_password_reset_token(user: User, token: str) -> bool:
+    """Vrai si le jeton a été émis pour cet utilisateur, n'a pas expiré et n'a pas déjà servi."""
+    if not token:
+        return False
+    try:
+        payload = signing.loads(token, salt=PASSWORD_RESET_TOKEN_SALT, max_age=PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS)
+    except signing.BadSignature:  # inclut SignatureExpired
+        return False
+    return (
+        payload.get('purpose') == 'password_reset'
+        and payload.get('user_id') == str(user.id)
+        and constant_time_compare(payload.get('fp', ''), _password_fingerprint(user))
+    )
 
 
 def _generate_totp_setup_token(user: User) -> str:

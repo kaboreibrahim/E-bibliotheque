@@ -281,11 +281,16 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     Données attendues :
       {
         "email":            "user@universite-ci.edu",
+        "reset_token":      "<jeton renvoyé par /api/auth/otp/verify/>",
         "new_password":     "NouveauMotDePasse123!",
         "confirm_password": "NouveauMotDePasse123!"
       }
     """
     email            = serializers.EmailField(help_text="Email du compte.")
+    reset_token      = serializers.CharField(
+        write_only=True,
+        help_text="Jeton renvoyé par /api/auth/otp/verify/ (type password_reset). Valable 15 minutes, usage unique."
+    )
     new_password     = serializers.CharField(
         write_only=True, min_length=8,
         style={'input_type': 'password'},

@@ -6,7 +6,7 @@
 """
  
 import uuid
-import random
+import secrets
 import string
 from datetime import timedelta
  
@@ -74,7 +74,7 @@ class CodeVerification(SafeDeleteModel):
     @classmethod
     def generate_code(cls):
         """Génère un code numérique à 6 chiffres."""
-        return ''.join(random.choices(string.digits, k=6))
+        return ''.join(secrets.choice(string.digits) for _ in range(6))
  
     @classmethod
     def create_verification_code(cls, user, type_code, email=None, validity_seconds=180):
@@ -123,4 +123,4 @@ class CodeVerification(SafeDeleteModel):
         """
         self.attempts += 1
         self.save(update_fields=['attempts'])
-        return self.attempts >= self.max_attempts
+        return self.attempts >= self.max_attempts

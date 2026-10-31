@@ -1000,6 +1000,9 @@ Génère et envoie un code OTP à 6 chiffres par email.
 class OTPVerifyView(APIView):
     """POST /api/auth/otp/verify/ — Vérifie un code OTP email"""
     permission_classes = [AllowAny]
+    # Le code OTP protège la réinitialisation du mot de passe : on limite les essais
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'totp'
 
     @extend_schema(
         tags=['Auth — OTP Email'],
@@ -1014,7 +1017,8 @@ class OTPVerifyView(APIView):
                 value={'code': '654321', 'type_code': 'password_reset', 'email': 'user@universite-ci.edu'}),
             OpenApiExample('Succès', response_only=True, status_codes=['200'],
                 value={'success': True, 'message': 'Code OTP vérifié avec succès.',
-                    'data': {'type_code': 'password_reset', 'verified': True}, 'errors': {}}),
+                    'data': {'type_code': 'password_reset', 'verified': True,
+                             'reset_token': '<jeton à transmettre à /password/reset/confirm/>'}, 'errors': {}}),
         ]
     )
     def post(self, request):
@@ -1074,15 +1078,19 @@ class PasswordResetConfirmView(APIView):
     @extend_schema(
         tags=['Auth — Mot de passe'],
         summary='Confirmer le nouveau mot de passe',
-        description="Définit le nouveau mot de passe. L'OTP `password_reset` doit avoir été vérifié avant.",
+        description=(
+            "Définit le nouveau mot de passe. Exige le `reset_token` renvoyé par "
+            "/api/auth/otp/verify/ pour l'OTP `password_reset` (valable 15 min, usage unique)."
+        ),
         request=PasswordResetConfirmSerializer,
         responses={
             200: OpenApiResponse(description="Mot de passe réinitialisé"),
-            400: OpenApiResponse(description="Mots de passe ne correspondent pas / règles non respectées"),
+            400: OpenApiResponse(description="Jeton absent, invalide ou expiré / mots de passe non conformes"),
         },
         examples=[
             OpenApiExample('Requête', request_only=True,
-                value={'email': 'user@universite-ci.edu', 'new_password': 'NouveauPass@2025!', 'confirm_password': 'NouveauPass@2025!'}),
+                value={'email': 'user@universite-ci.edu', 'reset_token': '<jeton>',
+                       'new_password': 'NouveauPass@2025!', 'confirm_password': 'NouveauPass@2025!'}),
             OpenApiExample('Succès', response_only=True, status_codes=['200'],
                 value={'success': True, 'message': 'Mot de passe réinitialisé. Reconnectez-vous.', 'data': {}, 'errors': {}}),
         ]
@@ -1091,7 +1099,11 @@ class PasswordResetConfirmView(APIView):
         s = PasswordResetConfirmSerializer(data=request.data)
         if not s.is_valid():
             return Response({'success': False, 'errors': s.errors, 'data': {}, 'message': 'Données invalides.'}, status=400)
-        return _resp(CommonAuthService.reset_password(s.validated_data['email'], s.validated_data['new_password']))
+        return _resp(CommonAuthService.reset_password(
+            s.validated_data['email'],
+            s.validated_data['new_password'],
+            s.validated_data['reset_token'],
+        ))
 
 
 # =============================================================================

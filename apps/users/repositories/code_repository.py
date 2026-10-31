@@ -5,6 +5,7 @@
 =============================================================================
 """
 
+from django.db.models import F
 from django.utils import timezone
 from apps.users.models.code_models import CodeVerification
 from apps.users.models.user_models import User
@@ -28,6 +29,7 @@ class CodeVerificationRepository:
                 code=code,
                 is_used=False,
                 expires_at__gt=timezone.now(),
+                attempts__lt=F('max_attempts'),
             )
             .order_by('-created_at')
             .first()
@@ -90,4 +92,4 @@ class CodeVerificationRepository:
             user=user,
             type_code=type_code,
             is_used=False
-        ).update(is_used=True)
+        ).update(is_used=True)
