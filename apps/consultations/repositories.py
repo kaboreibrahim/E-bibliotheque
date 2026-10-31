@@ -14,7 +14,7 @@ class ConsultationRepository:
     def get_all() -> QuerySet:
         return (
             Consultation.objects
-            .select_related("user", "document")
+            .select_related("user", "document", "document__type", "document__niveau", "document__filiere", "document__ue")
             .order_by("-created_at")
         )
 
@@ -22,7 +22,7 @@ class ConsultationRepository:
     def get_by_id(consultation_id: str) -> Consultation | None:
         return (
             Consultation.objects
-            .select_related("user", "document")
+            .select_related("user", "document", "document__type", "document__niveau", "document__filiere", "document__ue")
             .filter(pk=consultation_id)
             .first()
         )
@@ -31,7 +31,7 @@ class ConsultationRepository:
     def get_by_user(user_id: str) -> QuerySet:
         return (
             Consultation.objects
-            .select_related("user", "document")
+            .select_related("user", "document", "document__type", "document__niveau", "document__filiere", "document__ue")
             .filter(user_id=user_id)
             .order_by("-created_at")
         )
@@ -40,7 +40,7 @@ class ConsultationRepository:
     def get_by_document(document_id: str) -> QuerySet:
         return (
             Consultation.objects
-            .select_related("user", "document")
+            .select_related("user", "document", "document__type", "document__niveau", "document__filiere", "document__ue")
             .filter(document_id=document_id)
             .order_by("-created_at")
         )
@@ -49,7 +49,7 @@ class ConsultationRepository:
     def get_by_type(type_consultation: str) -> QuerySet:
         return (
             Consultation.objects
-            .select_related("user", "document")
+            .select_related("user", "document", "document__type", "document__niveau", "document__filiere", "document__ue")
             .filter(type_consultation=type_consultation)
             .order_by("-created_at")
         )

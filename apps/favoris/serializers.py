@@ -18,8 +18,17 @@ class _EtudiantMinimalSerializer(serializers.Serializer):
 
 
 class _DocumentMinimalSerializer(serializers.Serializer):
+    """Resume du document : de quoi l'afficher sans requete supplementaire."""
     id    = serializers.UUIDField()
     title = serializers.CharField()
+    type = serializers.CharField(source="type.code", default=None)
+    type_name = serializers.CharField(source="type.name", default=None)
+    auteur = serializers.CharField(default="")
+    niveau = serializers.CharField(source="niveau.name", default=None)
+    filiere = serializers.CharField(source="filiere.name", default=None)
+    ue_code = serializers.CharField(source="ue.code", default=None)
+    ue_name = serializers.CharField(source="ue.name", default=None)
+    file_size = serializers.IntegerField(default=None)
 
 
 # ── Sérialisation principale ──────────────────────────────────────────────────

@@ -3,10 +3,12 @@ from rest_framework import serializers as s
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.history.models import HistoriqueActionService as HAS
 from apps.users.serializers.profile_serializers import (
+    PasswordChangeSerializer,
     UserOwnProfileSerializer,
     UserOwnProfileUpdateSerializer,
 )
@@ -55,7 +57,7 @@ class CurrentUserProfileView(APIView):
 
     @extend_schema(
         tags=['Utilisateurs'],
-        summary='Mettre a jour ma photo et ma date de naissance',
+        summary='Mettre a jour ma photo, ma date de naissance et mon telephone',
         description=(
             "Permet a l'etudiant, au bibliothecaire et a l'administrateur "
             "de modifier leur photo de profil et/ou leur date de naissance."
@@ -85,6 +87,7 @@ class CurrentUserProfileView(APIView):
         serializer = UserOwnProfileUpdateSerializer(
             data=request.data,
             partial=True,
+            context={'request': request},
         )
         if not serializer.is_valid():
             return Response({
@@ -103,6 +106,10 @@ class CurrentUserProfileView(APIView):
         if 'date_of_birth' in data:
             user.date_of_birth = data['date_of_birth']
             updated_fields.append('date_of_birth')
+
+        if 'phone' in data:
+            user.phone = data['phone']
+            updated_fields.append('phone')
 
         if 'avatar' in data:
             if data['avatar'] is None and user.avatar:
@@ -137,5 +144,59 @@ class CurrentUserProfileView(APIView):
             'success': True,
             'message': 'Profil mis a jour avec succes.',
             'data': profile_serializer.data,
+            'errors': {},
+        })
+
+
+class PasswordChangeView(APIView):
+    """POST /api/auth/password/change/ - Changement du mot de passe de l'utilisateur connecte."""
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
+
+    @extend_schema(
+        tags=['Auth — Mot de passe'],
+        summary='Changer mon mot de passe',
+        description=(
+            "Remplace le mot de passe de l'utilisateur connecte. L'ancien mot de passe "
+            "est exige ; le nouveau doit respecter les regles de securite."
+        ),
+        request=PasswordChangeSerializer,
+        responses={
+            200: OpenApiResponse(description='Mot de passe modifie.'),
+            400: OpenApiResponse(description='Ancien mot de passe incorrect ou nouveau mot de passe non conforme.'),
+        },
+        examples=[
+            OpenApiExample(
+                'Requete',
+                request_only=True,
+                value={'old_password': 'Ancien@2025', 'new_password': 'Nouveau@2026!', 'confirm_password': 'Nouveau@2026!'},
+            ),
+        ],
+    )
+    def post(self, request):
+        serializer = PasswordChangeSerializer(data=request.data, context={'request': request})
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'message': 'Donnees invalides.',
+                'data': {},
+                'errors': serializer.errors,
+            }, status=400)
+
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.save(update_fields=['password', 'updated_at'])
+
+        HAS.log_utilisateur(
+            'MODIF',
+            auteur=user,
+            cible_user=user,
+            details={'champs': ['password'], 'source': 'self_password_change'},
+        )
+        return Response({
+            'success': True,
+            'message': 'Votre mot de passe a ete modifie avec succes.',
+            'data': {},
             'errors': {},
         })

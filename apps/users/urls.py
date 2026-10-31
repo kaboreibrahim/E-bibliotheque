@@ -43,7 +43,7 @@ from apps.users.views.auth_views import (
     TokenRefreshView,
     LogoutView,
 )
-from apps.users.views.profile_views import CurrentUserProfileView
+from apps.users.views.profile_views import CurrentUserProfileView, PasswordChangeView
  
 
 auth_urlpatterns = [
@@ -159,6 +159,11 @@ auth_urlpatterns = [
         'profile/',
         CurrentUserProfileView.as_view(),
         name='current-user-profile'
+    ),
+    path(
+        'password/change/',
+        PasswordChangeView.as_view(),
+        name='password-change'
     ),
 
     # ══════════════════════════════════════════════════════

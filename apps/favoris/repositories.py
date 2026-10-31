@@ -17,7 +17,7 @@ class FavoriRepository:
     def get_by_id(favori_id: str) -> Favori | None:
         return (
             Favori.objects
-            .select_related("etudiant__user", "document")
+            .select_related("etudiant__user", "document", "document__type", "document__niveau", "document__filiere", "document__ue")
             .filter(pk=favori_id)
             .first()
         )
@@ -26,7 +26,7 @@ class FavoriRepository:
     def get_by_etudiant(etudiant_id: str) -> QuerySet:
         return (
             Favori.objects
-            .select_related("etudiant__user", "document")
+            .select_related("etudiant__user", "document", "document__type", "document__niveau", "document__filiere", "document__ue")
             .filter(etudiant_id=etudiant_id)
             .order_by("-created_at")
         )
@@ -35,7 +35,7 @@ class FavoriRepository:
     def get_by_document(document_id: str) -> QuerySet:
         return (
             Favori.objects
-            .select_related("etudiant__user", "document")
+            .select_related("etudiant__user", "document", "document__type", "document__niveau", "document__filiere", "document__ue")
             .filter(document_id=document_id)
         )
 

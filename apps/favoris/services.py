@@ -53,6 +53,14 @@ class FavoriService:
         if not document:
             raise ValidationError(f"Document introuvable : {document_id}.")
 
+        # Meme regle d'acces que la consultation (niveau, filiere, specialite)
+        from apps.documents.services import DocumentService
+
+        try:
+            DocumentService().get_document(document_id, user=etudiant.user)
+        except ValidationError:
+            raise ValidationError(f"Document introuvable : {document_id}.")
+
         if self.repo.get_by_etudiant_and_document(etudiant_id, document_id):
             raise ValidationError("Ce document est deja dans vos favoris.")
 

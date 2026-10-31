@@ -1,3 +1,7 @@
+import re
+
+from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from apps.consultations.repositories import ConsultationRepository
@@ -169,6 +173,22 @@ class UserOwnProfileSerializer(serializers.Serializer):
 class UserOwnProfileUpdateSerializer(serializers.Serializer):
     avatar = serializers.ImageField(required=False, allow_null=True)
     date_of_birth = serializers.DateField(required=False, allow_null=True)
+    phone = serializers.CharField(required=False, max_length=25)
+
+    def validate_phone(self, value):
+        phone = re.sub(r'\s+', '', value or '')
+        if not re.match(r'^\+?\d{8,15}$', phone):
+            raise serializers.ValidationError(
+                "Numero invalide. Format attendu: +2250701002003"
+            )
+        request = self.context.get('request')
+        current = getattr(request, 'user', None)
+        others = get_user_model().objects.filter(phone=phone)
+        if current is not None and current.pk:
+            others = others.exclude(pk=current.pk)
+        if others.exists():
+            raise serializers.ValidationError("Ce numero est deja utilise par un autre compte.")
+        return phone
 
     def validate(self, attrs):
         if not attrs:
@@ -176,3 +196,31 @@ class UserOwnProfileUpdateSerializer(serializers.Serializer):
                 "Aucune donnee a mettre a jour n'a ete fournie."
             )
         return attrs
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    """Changement du mot de passe par l'utilisateur connecte (ancien mot de passe exige)."""
+    old_password = serializers.CharField(write_only=True, style={'input_type': 'password'})
+    new_password = serializers.CharField(write_only=True, min_length=8, style={'input_type': 'password'})
+    confirm_password = serializers.CharField(write_only=True, style={'input_type': 'password'})
+
+    def validate_old_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError("L'ancien mot de passe est incorrect.")
+        return value
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError(
+                {'confirm_password': "Les mots de passe ne correspondent pas."}
+            )
+        if data['new_password'] == data['old_password']:
+            raise serializers.ValidationError(
+                {'new_password': "Le nouveau mot de passe doit etre different de l'ancien."}
+            )
+        try:
+            validate_password(data['new_password'], user=self.context['request'].user)
+        except Exception as exc:
+            raise serializers.ValidationError({'new_password': list(getattr(exc, 'messages', [str(exc)]))})
+        return data
