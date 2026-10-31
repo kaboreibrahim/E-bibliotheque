@@ -15,7 +15,15 @@ class DocumentRepository:
         allowed_level_names: list[str] | None = None,
         allowed_filiere_id=None,
         allowed_specialite_name: str | None = None,
+        current_level_name: str | None = None,
     ) -> QuerySet:
+        """Restreint le catalogue d'un etudiant.
+
+        - niveaux inferieurs au sien : tous les documents de sa filiere,
+          quelle que soit la specialite ;
+        - son propre niveau : uniquement sa specialite (ou les documents
+          sans specialite).
+        """
         if allowed_level_names is not None:
             if not allowed_level_names:
                 return queryset.none()
@@ -25,10 +33,19 @@ class DocumentRepository:
             queryset = queryset.filter(filiere_id=allowed_filiere_id)
 
         if allowed_specialite_name:
-            queryset = queryset.filter(
-                Q(specialite__isnull=True)
-                | Q(specialite__name__iexact=allowed_specialite_name)
+            own_specialite = Q(specialite__isnull=True) | Q(
+                specialite__name__iexact=allowed_specialite_name
             )
+            if current_level_name and allowed_level_names:
+                lower_levels = [
+                    name for name in allowed_level_names if name != current_level_name
+                ]
+                queryset = queryset.filter(
+                    Q(niveau__name__in=lower_levels)
+                    | (Q(niveau__name=current_level_name) & own_specialite)
+                )
+            else:
+                queryset = queryset.filter(own_specialite)
 
         return queryset
 
@@ -51,12 +68,14 @@ class DocumentRepository:
         allowed_level_names: list[str] | None = None,
         allowed_filiere_id=None,
         allowed_specialite_name: str | None = None,
+        current_level_name: str | None = None,
     ) -> Document | None:
         queryset = DocumentRepository._apply_student_scope(
             DocumentRepository.get_all(),
             allowed_level_names=allowed_level_names,
             allowed_filiere_id=allowed_filiere_id,
             allowed_specialite_name=allowed_specialite_name,
+            current_level_name=current_level_name,
         )
         return queryset.filter(pk=document_id).first()
 
@@ -74,12 +93,14 @@ class DocumentRepository:
         allowed_level_names: list[str] | None = None,
         allowed_filiere_id=None,
         allowed_specialite_name: str | None = None,
+        current_level_name: str | None = None,
     ) -> QuerySet:
         queryset = DocumentRepository._apply_student_scope(
             DocumentRepository.get_all(),
             allowed_level_names=allowed_level_names,
             allowed_filiere_id=allowed_filiere_id,
             allowed_specialite_name=allowed_specialite_name,
+            current_level_name=current_level_name,
         )
 
         if type_document:
@@ -114,12 +135,14 @@ class DocumentRepository:
         allowed_level_names: list[str] | None = None,
         allowed_filiere_id=None,
         allowed_specialite_name: str | None = None,
+        current_level_name: str | None = None,
     ) -> dict[str, int]:
         queryset = DocumentRepository._apply_student_scope(
             Document.objects.only("id", "file_size"),
             allowed_level_names=allowed_level_names,
             allowed_filiere_id=allowed_filiere_id,
             allowed_specialite_name=allowed_specialite_name,
+            current_level_name=current_level_name,
         )
 
         # PERF-001 : agregation SQL (file_size est precalcule a chaque save())

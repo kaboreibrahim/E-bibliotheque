@@ -410,7 +410,7 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
             niveau=self.niveau_l2,
             specialite=self.specialite_l2,
         )
-        self._create_document(
+        document_l1_autre_specialite = self._create_document(
             title="Cours L1 autre specialite",
             niveau=self.niveau_l1,
             specialite=self.specialite_alt_l1,
@@ -449,9 +449,11 @@ class DocumentOpenApiTests(_DocumentStorageMixin, APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         returned_ids = {item["id"] for item in response.data["results"]}
+        # Niveau inferieur (L1) : toutes les specialites de la filiere ;
+        # niveau courant (L2) : uniquement sa specialite.
         self.assertSetEqual(
             returned_ids,
-            {str(self.document.pk), str(document_l2.pk)},
+            {str(self.document.pk), str(document_l1_autre_specialite.pk), str(document_l2.pk)},
         )
 
     def test_master_student_sees_master_and_lower_levels_only(self):

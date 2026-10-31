@@ -270,7 +270,7 @@ class EtudiantCreateView(APIView):
 
 - **Matricule** : format `ETU + année + 5 chiffres` (ex: `ETU202512345`)
 - **Secret TOTP** : pour Google Authenticator (retourné dans la réponse)
-- **Compte** : inactif par défaut (`activer_immediatement: false`)
+- **Compte** : activé dès la création (`activer_immediatement: true` par défaut), valide de la date d'inscription à la fin de l'année académique courante
 
 ---
 

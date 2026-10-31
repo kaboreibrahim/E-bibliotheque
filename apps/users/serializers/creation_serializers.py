@@ -118,12 +118,12 @@ class EtudiantCreateSerializer(serializers.Serializer):
     )
 
     activer_immediatement = serializers.BooleanField(
-        default=False,
+        default=True,
         help_text=(
-            "Si True, le compte est active immediatement "
-            "et la validite du compte est calculee depuis l'annee academique "
-            "courante, ou, a defaut, depuis la duree standard. "
-            "Si False (defaut), le compte est cree inactif."
+            "True (defaut) : le compte est active des sa creation ; sa validite "
+            "court de la date d'inscription jusqu'a la fin de l'annee academique "
+            "courante (ou, a defaut d'annee courante, la duree standard). "
+            "False : le compte est cree inactif."
         )
     )
 

@@ -230,7 +230,15 @@ class Etudiant(SafeDeleteModel):
 
             annee_courante = AnneeAcademique.get_courante()
             if annee_courante:
-                self.date_debut_validite = annee_courante.date_debut
+                # Validite : de la date d'inscription (creation du compte) jusqu'a la
+                # fin de l'annee academique courante. Si l'annee n'a pas encore
+                # commence, la validite debute avec elle ; si elle est deja terminee,
+                # la periode de l'annee est conservee telle quelle (compte expire).
+                aujourd_hui = timezone.localdate()
+                debut = max(aujourd_hui, annee_courante.date_debut)
+                if debut > annee_courante.date_fin:
+                    debut = annee_courante.date_debut
+                self.date_debut_validite = debut
                 self.date_fin_validite = annee_courante.date_fin
 
         self.full_clean()

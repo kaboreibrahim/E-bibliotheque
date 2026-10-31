@@ -68,6 +68,7 @@ class DocumentService:
             "allowed_level_names": list(DOCUMENT_LEVEL_ORDER[: max_rank + 1]),
             "allowed_filiere_id": filiere_id,
             "allowed_specialite_name": specialite_name,
+            "current_level_name": niveau_name,
         }
 
     def list_documents(

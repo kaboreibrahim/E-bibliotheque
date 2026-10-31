@@ -217,7 +217,7 @@ class EtudiantCreationService:
         )
 
         # ── Activer si demandé ────────────────────────────────────────────────
-        if data.get('activer_immediatement', False):
+        if data.get('activer_immediatement', True):
             EtudiantRepository.activer(etudiant, effectue_par=effectue_par)
 
         # ── Log MongoDB ───────────────────────────────────────────────────────
@@ -229,7 +229,7 @@ class EtudiantCreationService:
                 'matricule':   etudiant.matricule,
                 'niveau':      niveau.name if niveau else None,
                 'specialite':  str(specialite) if specialite else None,
-                'active':      data.get('activer_immediatement', False),
+                'active':      data.get('activer_immediatement', True),
                 'date_debut_validite': (
                     etudiant.date_debut_validite.isoformat()
                     if etudiant.date_debut_validite else None
@@ -248,7 +248,7 @@ class EtudiantCreationService:
                 f"Matricule : {etudiant.matricule}. "
                 + (
                     _build_validity_summary(etudiant)
-                    if data.get('activer_immediatement')
+                    if data.get('activer_immediatement', True)
                     else "Compte inactif - activation manuelle requise."
                 )
             ),
