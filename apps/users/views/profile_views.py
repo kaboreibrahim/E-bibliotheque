@@ -200,3 +200,36 @@ class PasswordChangeView(APIView):
             'data': {},
             'errors': {},
         })
+
+
+class ProfileAvatarView(APIView):
+    """
+    GET /api/auth/profile/avatar/ — photo de profil de l'utilisateur connecte.
+
+    Servie par l'API (comme les documents) : elle s'affiche meme quand le serveur
+    web ne publie pas le dossier /media/ (DEBUG=False en production).
+    """
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary='Ma photo de profil (fichier image)',
+        tags=['Profil'],
+        responses={200: OpenApiResponse(description="Image (JPEG, PNG, WebP…)"), 404: OpenApiResponse(description="Aucune photo")},
+    )
+    def get(self, request):
+        import mimetypes
+
+        from django.http import FileResponse, Http404
+
+        avatar = request.user.avatar
+        if not avatar:
+            raise Http404("Aucune photo de profil.")
+        try:
+            handle = avatar.open('rb')
+        except (FileNotFoundError, OSError):
+            raise Http404("Fichier de la photo introuvable.")
+        content_type = mimetypes.guess_type(avatar.name)[0] or 'application/octet-stream'
+        response = FileResponse(handle, content_type=content_type)
+        response['Cache-Control'] = 'private, max-age=300'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response

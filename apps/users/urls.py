@@ -43,7 +43,7 @@ from apps.users.views.auth_views import (
     TokenRefreshView,
     LogoutView,
 )
-from apps.users.views.profile_views import CurrentUserProfileView, PasswordChangeView
+from apps.users.views.profile_views import CurrentUserProfileView, PasswordChangeView, ProfileAvatarView
  
 
 auth_urlpatterns = [
@@ -154,6 +154,11 @@ auth_urlpatterns = [
         'logout/',
         LogoutView.as_view(),
         name='logout'
+    ),
+    path(
+        'profile/avatar/',
+        ProfileAvatarView.as_view(),
+        name='profile-avatar'
     ),
     path(
         'profile/',

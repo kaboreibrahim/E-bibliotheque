@@ -3,6 +3,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from core.recherche import RechercheGlobaleView
 from apps.users.urls import (
     bibliothecaire_urlpatterns,
     etudiant_urlpatterns,
@@ -27,6 +28,7 @@ urlpatterns = [
     path('api/docs/',   SpectacularSwaggerView.as_view(url_name='schema'),   name='swagger-ui'),
     path('api/redoc/',  SpectacularRedocView.as_view(url_name='schema'),     name='redoc'),
     path('api/auth/',   include('apps.users.urls')),
+    path('api/recherche/', RechercheGlobaleView.as_view(), name='recherche-globale'),
     path('api/etudiants/', include((etudiant_urlpatterns, 'users'), namespace='etudiants')),
     path('api/personnes-externes/', include((personne_externe_urlpatterns, 'users'), namespace='personnes-externes')),
     path('api/bibliothecaires/', include((bibliothecaire_urlpatterns, 'users'), namespace='bibliothecaires')),

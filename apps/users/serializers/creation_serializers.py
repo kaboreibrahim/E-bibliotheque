@@ -157,7 +157,22 @@ class EtudiantCreateSerializer(serializers.Serializer):
         return data
 
 
-class EtudiantUpdateSerializer(serializers.Serializer):
+class ContactUpdateFields(serializers.Serializer):
+    """
+    Champs de contact modifiables par l'administration sur tous les comptes.
+    L'unicite (email, telephone) est verifiee par la vue, qui connait le compte modifie.
+    """
+
+    email = serializers.EmailField(
+        required=False,
+        help_text="Nouvel email de connexion (pour les comptes connectes par email).",
+    )
+
+    def validate_email(self, value):
+        return value.lower().strip()
+
+
+class EtudiantUpdateSerializer(ContactUpdateFields):
     """
     Mise a jour du profil etudiant (PATCH).
     Seuls les champs envoyes seront modifies.
@@ -312,7 +327,7 @@ class PersonneExterneCreateSerializer(serializers.Serializer):
         return data
 
 
-class PersonneExterneUpdateSerializer(serializers.Serializer):
+class PersonneExterneUpdateSerializer(ContactUpdateFields):
     first_name = serializers.CharField(max_length=100, required=False)
     last_name = serializers.CharField(max_length=100, required=False)
     phone = serializers.CharField(max_length=17, required=False)
@@ -461,7 +476,7 @@ class BibliothecaireCreateSerializer(serializers.Serializer):
         return data
 
 
-class BibliothecaireUpdateSerializer(serializers.Serializer):
+class BibliothecaireUpdateSerializer(ContactUpdateFields):
     """Mise a jour du profil bibliothecaire (PATCH)."""
 
     first_name = serializers.CharField(max_length=100, required=False)
@@ -647,7 +662,7 @@ class EnseignantChercheurCreateSerializer(serializers.Serializer):
         return data
 
 
-class EnseignantChercheurUpdateSerializer(serializers.Serializer):
+class EnseignantChercheurUpdateSerializer(ContactUpdateFields):
     first_name = serializers.CharField(max_length=100, required=False)
     last_name = serializers.CharField(max_length=100, required=False)
     phone = serializers.CharField(max_length=17, required=False)
@@ -744,7 +759,7 @@ class ChercheurCreateSerializer(serializers.Serializer):
         return data
 
 
-class ChercheurUpdateSerializer(serializers.Serializer):
+class ChercheurUpdateSerializer(ContactUpdateFields):
     first_name = serializers.CharField(max_length=100, required=False)
     last_name = serializers.CharField(max_length=100, required=False)
     phone = serializers.CharField(max_length=17, required=False)

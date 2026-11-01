@@ -232,9 +232,28 @@ def _build_chercheur_queryset(request):
     return queryset
 
 
+def _contact_conflicts(user, data):
+    """
+    Refuse un email ou un telephone deja utilise par un autre compte
+    (contraintes uniques en base : sans ce controle, la modification finit en erreur 500).
+    """
+    from apps.users.models import User
+    errors = {}
+    # all_objects : un compte supprime (suppression logique) garde son email et son telephone
+    others = User.all_objects.exclude(pk=user.pk)
+    if 'email' in data and others.filter(email__iexact=data['email']).exists():
+        errors['email'] = ["Cette adresse email est déjà utilisée par un autre compte."]
+    if 'phone' in data and others.filter(phone=data['phone']).exists():
+        errors['phone'] = ["Ce numéro de téléphone est déjà utilisé par un autre compte."]
+    if not errors:
+        return None
+    return Response({'success': False, 'message': 'Données invalides.', 'data': {}, 'errors': errors}, status=400)
+
+
 # =============================================================================
 # 🎓  CRÉATION ÉTUDIANT
 # =============================================================================
+
 
 class EtudiantCreateView(APIView):
     """
@@ -665,9 +684,12 @@ class PersonneExterneDetailView(APIView):
             }, status=400)
 
         data = serializer.validated_data
+        conflict = _contact_conflicts(personne.user, data)
+        if conflict:
+            return conflict
         user_fields = {
             field: data[field]
-            for field in ('first_name', 'last_name', 'phone', 'date_of_birth')
+            for field in ('first_name', 'last_name', 'email', 'phone', 'date_of_birth')
             if field in data
         }
         profil_fields = {
@@ -810,10 +832,13 @@ class EtudiantDetailView(APIView):
                              'data': {}, 'errors': serializer.errors}, status=400)
 
         data = serializer.validated_data
+        conflict = _contact_conflicts(etudiant.user, data)
+        if conflict:
+            return conflict
         user_fields    = {}
         profil_fields  = {}
 
-        for f in ('first_name', 'last_name', 'phone', 'date_of_birth'):
+        for f in ('first_name', 'last_name', 'email', 'phone', 'date_of_birth'):
             if f in data:
                 user_fields[f] = data[f]
 
@@ -1196,7 +1221,10 @@ class BibliothecaireDetailView(APIView):
                              'data': {}, 'errors': serializer.errors}, status=400)
 
         data = serializer.validated_data
-        user_fields   = {f: data[f] for f in ('first_name', 'last_name', 'phone', 'date_of_birth') if f in data}
+        conflict = _contact_conflicts(b.user, data)
+        if conflict:
+            return conflict
+        user_fields   = {f: data[f] for f in ('first_name', 'last_name', 'email', 'phone', 'date_of_birth') if f in data}
         profil_fields = {f: data[f] for f in ('badge_number', 'date_prise_poste', 'peut_gerer_documents', 'peut_gerer_utilisateurs') if f in data}
 
         from apps.users.repositories.user_repository import UserRepository
@@ -1391,7 +1419,10 @@ class EnseignantChercheurDetailView(APIView):
                              'data': {}, 'errors': serializer.errors}, status=400)
 
         data = serializer.validated_data
-        user_fields = {f: data[f] for f in ('first_name', 'last_name', 'phone', 'date_of_birth') if f in data}
+        conflict = _contact_conflicts(obj.user, data)
+        if conflict:
+            return conflict
+        user_fields = {f: data[f] for f in ('first_name', 'last_name', 'email', 'phone', 'date_of_birth') if f in data}
         profil_fields = {f: data[f] for f in ('numero_piece', 'lieu_habitation', 'annee_service', 'specialite_enseignee') if f in data}
 
         from apps.users.repositories.user_repository import UserRepository
@@ -1593,7 +1624,10 @@ class ChercheurDetailView(APIView):
                              'data': {}, 'errors': serializer.errors}, status=400)
 
         data = serializer.validated_data
-        user_fields = {f: data[f] for f in ('first_name', 'last_name', 'phone', 'date_of_birth') if f in data}
+        conflict = _contact_conflicts(obj.user, data)
+        if conflict:
+            return conflict
+        user_fields = {f: data[f] for f in ('first_name', 'last_name', 'email', 'phone', 'date_of_birth') if f in data}
         profil_fields = {f: data[f] for f in ('numero_piece', 'lieu_habitation', 'annee_service', 'specialite_enseignee') if f in data}
 
         from apps.users.repositories.user_repository import UserRepository

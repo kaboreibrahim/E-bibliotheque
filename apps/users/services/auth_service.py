@@ -930,12 +930,14 @@ class CommonAuthService:
         try:
             old_token  = RefreshToken(refresh_token)
             user       = UserRepository.get_by_id(str(old_token['user_id']))
-            new_refresh = RefreshToken.for_user(user)
+            if user is None or not user.is_active:
+                raise ValueError("Compte introuvable ou desactive.")
             old_token.blacklist()
+            # Memes informations que les jetons emis a la connexion (type de compte, nom, email)
             return AuthResult(
                 success=True,
                 message="Token rafraîchi.",
-                data={'access': str(new_refresh.access_token), 'refresh': str(new_refresh)},
+                data=_generate_tokens(user),
                 http_status=200
             )
         except Exception as e:

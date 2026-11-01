@@ -112,10 +112,13 @@ AUTH_USER_MODEL='users.User'
  
 CORS_ALLOWED_ORIGINS = os.getenv(
     'CORS_ALLOWED_ORIGINS',
-'http://localhost:3000,http://localhost:5173,http://localhost:4200,https://salam-logistics.com'
+'https://lapered.com,https://www.lapered.com,http://localhost:3000,http://localhost:5173,http://localhost:4200,https://salam-logistics.com'
 ).split(',')
 
 CSRF_TRUSTED_ORIGINS = [
+    "https://lapered.com",
+    "https://www.lapered.com",
+    "https://otl-bulkliquid.com",
     "https://salam-logistics.com",
 ]
 
@@ -137,7 +140,8 @@ CORS_ALLOW_HEADERS = [
 # Configuration des sessions
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'  # Stockage des sessions en base de données
 SESSION_COOKIE_AGE = 86400  # Durée de vie du cookie de session en secondes (1 jour)
-SESSION_COOKIE_SECURE = False  # À définir sur True en production avec HTTPS
+SESSION_COOKIE_SECURE = not DEBUG  # Cookie transmis uniquement en HTTPS en production
+CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True  # Empêche l'accès au cookie via JavaScript
 SESSION_SAVE_EVERY_REQUEST = True  # Rafraîchit la session à chaque requête
 SESSION_COOKIE_SAMESITE = 'Lax'  # Protection contre les attaques CSRF
@@ -255,40 +259,45 @@ WSGI_APPLICATION = 'core.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+#
+# Le moteur est choisi via DB_ENGINE dans .env :
+#   - 'postgresql' (defaut) -> dev local
+#   - 'mysql'               -> production (cPanel)
+# Aucun identifiant n'est en dur ici : tout vient de .env (non commite).
 
-#Pour PostgreSQL (optionnel)
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': config('DB_NAME'),
-#         'USER': config('DB_USER'),
-#         'PASSWORD': config('DB_PASSWORD'),
-#         'HOST': config('DB_HOST'),
-#         'PORT': config('DB_PORT'),
+DB_ENGINE = config('DB_ENGINE', default='postgresql').strip().lower()
 
-#         'OPTIONS': {
-#             'connect_timeout': 10,
-#         },
-#         'CONN_MAX_AGE': 60,   # connexions persistantes (60 sec)
-#     }
-# }
-
-# Pour MySQL (actif)
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'c2745157c_BIBLIOv1',
-        'USER': 'c2745157c_user',
-        'PASSWORD': '#4h].2WrwNrELChB',
-        'HOST': 'localhost',      # ou l'adresse de ton serveur MySQL
-        'PORT': '3306',
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES', time_zone='+00:00'",
-        },
-        'CONN_MAX_AGE': 60,
+if DB_ENGINE == 'mysql':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': config('DB_NAME'),
+            'USER': config('DB_USER'),
+            'PASSWORD': config('DB_PASSWORD'),
+            'HOST': config('DB_HOST', default='localhost'),
+            'PORT': config('DB_PORT', default='3306'),
+            'OPTIONS': {
+                'charset': 'utf8mb4',
+                'init_command': "SET sql_mode='STRICT_TRANS_TABLES', time_zone='+00:00'",
+            },
+            'CONN_MAX_AGE': 60,
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': config('DB_NAME'),
+            'USER': config('DB_USER'),
+            'PASSWORD': config('DB_PASSWORD'),
+            'HOST': config('DB_HOST', default='127.0.0.1'),
+            'PORT': config('DB_PORT', default='5432'),
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
+            'CONN_MAX_AGE': 60,
+        }
+    }
 
 
 # =============================================================================
