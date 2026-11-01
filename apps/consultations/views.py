@@ -37,7 +37,7 @@ from apps.consultations.serializers import (
     TopRechercheSerializer,
 )
 from apps.consultations.services import ConsultationService
-from apps.consultations.stats_overview import PERIODES_AUTORISEES, build_overview
+from apps.consultations.stats_overview import PERIODES_AUTORISEES, PERIODES_PERSONNELLES, build_overview, build_personal
 from apps.users.permissions import IsAdminOrBibliothecaire
 from core.pagination import StandardResultsPagination
 
@@ -303,6 +303,35 @@ class ConsultationViewSet(viewsets.ViewSet):
         if jours not in PERIODES_AUTORISEES:
             jours = 30
         return Response(build_overview(jours))
+
+    # ── GET /consultations/stats/moi/ ─────────────────────────────────────────
+    @extend_schema(
+        summary="Mes statistiques de lecture (tableau de bord du lecteur)",
+        tags=["Consultations – Stats"],
+        description=(
+            "Activite du lecteur connecte : lectures et minutes par jour, documents "
+            "distincts, temps de lecture, serie de jours consecutifs, repartition par "
+            "type de document et par UE. Les entrees effacees de l'historique ne comptent pas."
+        ),
+        parameters=[
+            OpenApiParameter(name="jours", description="Periode : 7, 30 ou 90 jours (defaut 30)", required=False, type=int),
+        ],
+        responses={200: OpenApiResponse(description="Statistiques personnelles.")},
+    )
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="stats/moi",
+        permission_classes=[IsAuthenticated],
+    )
+    def stats_moi(self, request):
+        try:
+            jours = int(request.query_params.get("jours", 30))
+        except (TypeError, ValueError):
+            jours = 30
+        if jours not in PERIODES_PERSONNELLES:
+            jours = 30
+        return Response(build_personal(request.user, jours))
 
     # ── GET /consultations/en-cours/ ──────────────────────────────────────────
     @extend_schema(

@@ -14,13 +14,16 @@ from apps.documents.models import Document, TypeDocument
 from apps.filiere.models import Filiere
 from apps.niveau.models import Niveau
 from apps.specialites.models import Specialite
+from apps.ue.models import ECUE, UE
 from apps.users.models import User
 
 URL = "/api/consultations/consultations/stats/overview/"
 MEDIA = Path(__file__).resolve().parent / "_test_media_overview"
 
 
-class StatsOverviewTests(APITestCase):
+class DonneesStats:
+    """Comptes, document et consultations communs aux deux jeux de tests."""
+
     def setUp(self):
         MEDIA.mkdir(exist_ok=True)
         media = override_settings(MEDIA_ROOT=str(MEDIA))
@@ -57,6 +60,8 @@ class StatsOverviewTests(APITestCase):
                                               debut_consultation=now, duree_secondes=600)
         effacee.delete()
 
+
+class StatsOverviewTests(DonneesStats, APITestCase):
     def test_reserve_admin_et_bibliothecaire(self):
         self.client.force_authenticate(user=self.etu)
         self.assertEqual(self.client.get(URL).status_code, status.HTTP_403_FORBIDDEN)
@@ -88,3 +93,49 @@ class StatsOverviewTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         self.assertEqual(self.client.get(URL, {"jours": "abc"}).data["periode"]["jours"], 30)
         self.assertEqual(self.client.get(URL, {"jours": 12}).data["periode"]["jours"], 30)
+
+
+class StatsPersonnellesTests(DonneesStats, APITestCase):
+    """GET /consultations/consultations/stats/moi/ : chiffres du lecteur connecte uniquement."""
+
+    URL_MOI = "/api/consultations/consultations/stats/moi/"
+
+    def test_reserve_aux_comptes_connectes(self):
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get(self.URL_MOI).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_mes_chiffres(self):
+        self.client.force_authenticate(user=self.etu)
+        res = self.client.get(self.URL_MOI, {"jours": 7})
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        k = res.data["kpis"]
+        # la lecture effacee de l'historique n'est pas comptee dans l'espace personnel
+        self.assertEqual(k["lectures"], 3)
+        self.assertEqual(k["recherches"], 1)
+        self.assertEqual(k["documents_distincts"], 1)
+        self.assertEqual(k["temps_lecture_secondes"], 1800)
+        self.assertEqual(k["jours_actifs"], 2)
+        self.assertEqual(k["serie_jours"], 2)
+        self.assertEqual(k["lectures_variation"], 200.0)
+        self.assertEqual(len(res.data["activite_quotidienne"]), 7)
+        self.assertEqual(res.data["activite_quotidienne"][-1]["minutes"], 10)
+        self.assertEqual(res.data["lectures_par_type"][0]["nb"], 3)
+
+    def test_isolation_entre_lecteurs(self):
+        self.client.force_authenticate(user=self.biblio)
+        res = self.client.get(self.URL_MOI)
+        self.assertEqual(res.data["kpis"]["lectures"], 0)
+        self.assertEqual(res.data["kpis"]["serie_jours"], 0)
+
+    def test_lectures_par_ue_parente(self):
+        ue = UE.objects.create(code="DPV1101", name="Droit civil")
+        ecue = ECUE.objects.create(ue=ue, code="DPV1101-1", name="Personnes")
+        self.doc.ue = ecue
+        self.doc.save(update_fields=["ue"])
+        self.client.force_authenticate(user=self.etu)
+        res = self.client.get(self.URL_MOI, {"jours": 7})
+        self.assertEqual(res.data["lectures_par_ue"], [{"code": "DPV1101", "libelle": "Droit civil", "nb": 3}])
+
+    def test_periode_invalide(self):
+        self.client.force_authenticate(user=self.etu)
+        self.assertEqual(self.client.get(self.URL_MOI, {"jours": 365}).data["periode"]["jours"], 30)

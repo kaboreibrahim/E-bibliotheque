@@ -10,7 +10,7 @@ les statistiques de frequentation.
 from datetime import date, datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Q, Sum
 from django.db.models.functions import ExtractHour, TruncDate, TruncMonth
 from django.utils import timezone
 
@@ -164,4 +164,96 @@ def build_overview(jours: int = 30) -> dict:
         "documents_par_type": par_type,
         "documents_par_niveau": par_niveau,
         "utilisateurs_par_type": utilisateurs,
+    }
+
+
+# =============================================================================
+# Statistiques personnelles du lecteur connecte (tableau de bord etudiant)
+# =============================================================================
+
+PERIODES_PERSONNELLES = (7, 30, 90)
+
+
+def build_personal(user, jours: int = 30) -> dict:
+    """
+    Activite de lecture du lecteur connecte. Les entrees qu'il a effacees de son
+    historique ne sont pas comptees (c'est son espace personnel).
+    """
+    if jours not in PERIODES_PERSONNELLES:
+        jours = 30
+    aujourdhui = timezone.localdate()
+    debut = aujourdhui - timedelta(days=jours - 1)
+    debut_dt = _debut_du_jour(debut)
+    fin_dt = _debut_du_jour(aujourdhui + timedelta(days=1))
+    prec_debut_dt = _debut_du_jour(debut - timedelta(days=jours))
+
+    mes = Consultation.objects.filter(user=user)
+    lectures = mes.filter(type_consultation="VUE")
+    periode = mes.filter(debut_consultation__gte=debut_dt, debut_consultation__lt=fin_dt)
+    lectures_periode = lectures.filter(debut_consultation__gte=debut_dt, debut_consultation__lt=fin_dt)
+    lectures_prec = lectures.filter(debut_consultation__gte=prec_debut_dt, debut_consultation__lt=debut_dt).count()
+
+    k = periode.aggregate(
+        lectures=Count("id", filter=Q(type_consultation="VUE")),
+        recherches=Count("id", filter=Q(type_consultation="RECHERCHE")),
+        documents=Count("document", filter=Q(type_consultation="VUE"), distinct=True),
+        temps=Sum("duree_secondes", filter=Q(type_consultation="VUE")),
+    )
+
+    # Lectures et minutes par jour
+    par_jour = {
+        _cle_jour(r["jour"]): r
+        for r in lectures_periode.annotate(jour=TruncDate("debut_consultation"))
+        .values("jour")
+        .annotate(nb=Count("id"), secondes=Sum("duree_secondes"))
+    }
+    activite = []
+    for i in range(jours):
+        jour = debut + timedelta(days=i)
+        r = par_jour.get(jour, {})
+        activite.append({"date": jour.isoformat(), "lectures": r.get("nb", 0), "minutes": round((r.get("secondes") or 0) / 60)})
+
+    # Serie : jours consecutifs avec au moins une lecture, jusqu'a aujourd'hui (ou hier)
+    jours_lus = set(
+        _cle_jour(d)
+        for d in lectures.filter(debut_consultation__gte=_debut_du_jour(aujourdhui - timedelta(days=365)))
+        .annotate(jour=TruncDate("debut_consultation"))
+        .values_list("jour", flat=True)
+    )
+    serie = 0
+    jour = aujourdhui if aujourdhui in jours_lus else aujourdhui - timedelta(days=1)
+    while jour in jours_lus:
+        serie += 1
+        jour -= timedelta(days=1)
+
+    par_type = [
+        {"code": r["document__type__code"], "libelle": r["document__type__name"], "nb": r["nb"]}
+        for r in lectures_periode.filter(document__isnull=False)
+        .values("document__type__code", "document__type__name")
+        .annotate(nb=Count("id"))
+        .order_by("-nb")
+    ]
+    # Matieres : l'ECUE du document, regroupee par UE parente
+    par_ue = [
+        {"code": r["document__ue__ue__code"], "libelle": r["document__ue__ue__name"], "nb": r["nb"]}
+        for r in lectures_periode.filter(document__ue__isnull=False)
+        .values("document__ue__ue__code", "document__ue__ue__name")
+        .annotate(nb=Count("id"))
+        .order_by("-nb")[:5]
+    ]
+
+    return {
+        "periode": {"jours": jours, "debut": debut.isoformat(), "fin": aujourdhui.isoformat()},
+        "kpis": {
+            "lectures": k["lectures"],
+            "lectures_variation": _variation(k["lectures"], lectures_prec),
+            "documents_distincts": k["documents"],
+            "temps_lecture_secondes": int(k["temps"] or 0),
+            "recherches": k["recherches"],
+            "jours_actifs": sum(1 for j in activite if j["lectures"]),
+            "serie_jours": serie,
+        },
+        "activite_quotidienne": activite,
+        "lectures_par_type": par_type,
+        "lectures_par_ue": par_ue,
     }
