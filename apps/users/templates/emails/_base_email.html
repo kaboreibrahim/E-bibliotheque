@@ -39,7 +39,7 @@
                   padding: 36px 40px 28px;
                 ">
               <!-- Logo / Icône -->
-              <div style="
+              {% block header_icon %}<div style="
                 display: inline-block;
                 background-color: rgba(255,255,255,0.15);
                 border-radius: 50%;
@@ -49,7 +49,7 @@
                 text-align: center;
                 font-size: 28px;
                 margin-bottom: 16px;
-              ">📚</div>
+              ">📚</div>{% endblock %}
 
               <h1 style="
                 margin: 0;
@@ -57,13 +57,13 @@
                 font-size: 18px;
                 font-weight: 700;
                 letter-spacing: 0.5px;
-              ">Bibliothèque Universitaire</h1>
+              ">{% block header_title %}Bibliothèque Universitaire{% endblock %}</h1>
 
               <p style="
                 margin: 6px 0 0;
                 color: rgba(255,255,255,0.75);
                 font-size: 13px;
-              ">Système de gestion documentaire</p>
+              ">{% block header_subtitle %}Système de gestion documentaire{% endblock %}</p>
             </td>
           </tr>
 
@@ -97,8 +97,8 @@
                       line-height: 1.6;
                     ">
                       <strong style="color: #475569;">Sécurité :</strong>
-                      Ne communiquez jamais ce code à personne. Notre équipe ne vous demandera
-                      jamais votre mot de passe ni ce code par téléphone ou email.
+                      {% block security %}Ne communiquez jamais ce code à personne. Notre équipe ne vous demandera
+                      jamais votre mot de passe ni ce code par téléphone ou email.{% endblock %}
                     </p>
                   </td>
                 </tr>
@@ -116,7 +116,7 @@
                   padding: 20px 40px;
                 ">
               <p style="margin: 0; font-size: 12px; color: #93C5FD;">
-                © 2025 · Bibliothèque Universitaire · Tous droits réservés
+                {% block footer %}© 2025 · Bibliothèque Universitaire · Tous droits réservés{% endblock %}
               </p>
               <p style="margin: 6px 0 0; font-size: 11px; color: #BFDBFE;">
                 Cet email a été envoyé automatiquement, merci de ne pas y répondre.

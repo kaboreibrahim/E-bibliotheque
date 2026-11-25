@@ -99,8 +99,10 @@ class UserRepository:
 
     @staticmethod
     def update_password(user: User, new_password: str) -> None:
+        """Enregistre un mot de passe choisi par l'utilisateur (le temporaire est donc remplacé)."""
         user.set_password(new_password)
-        user.save(update_fields=['password', 'updated_at'])
+        user.must_change_password = False
+        user.save(update_fields=['password', 'must_change_password', 'updated_at'])
 
     @staticmethod
     def activate(user: User) -> User:

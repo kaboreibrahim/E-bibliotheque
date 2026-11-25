@@ -22,6 +22,7 @@ from apps.users.models.user_models import User
 from apps.users.models.bibliothecaire_models import Bibliothecaire
 from apps.users.models.etudiant_models import Etudiant
 from apps.users.models.personne_models import PersonneExterne, EnseignantChercheur, Chercheur
+from apps.users.services.auth_service import TOTP_ISSUER_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +234,7 @@ CHERCHEURS = [
 def _generate_totp(email: str) -> tuple[str, str]:
     secret = pyotp.random_base32()
     uri = pyotp.TOTP(secret).provisioning_uri(
-        name=email, issuer_name="Bibliothèque Universitaire CI"
+        name=email, issuer_name=TOTP_ISSUER_NAME
     )
     return secret, uri
 

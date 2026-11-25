@@ -22,6 +22,8 @@ from apps.users.repositories.personne_repository import (
     EnseignantChercheurRepository,
     ChercheurRepository,
 )
+from apps.users.services.auth_service import TOTP_ISSUER_NAME
+from apps.users.services.notification_service import envoyer_identifiants
 from apps.history.models import HistoriqueActionService as HAS
 
 logger = logging.getLogger(__name__)
@@ -45,6 +47,16 @@ def _build_validity_summary(profile) -> str:
         return f"Expire le {compte_expire_le.strftime('%d/%m/%Y')}."
 
     return "Le compte est actif." if profile.user.is_active else "Le compte est inactif."
+
+
+def _notifier_titulaire(user: User, mot_de_passe: str, matricule: str = None, validite: str = '') -> tuple[bool, str]:
+    """Envoie ses identifiants au titulaire ; retourne (envoyé, phrase pour la personne qui crée le compte)."""
+    if envoyer_identifiants(user, mot_de_passe, matricule=matricule, validite=validite):
+        return True, f"Identifiants envoyés par email à {user.email}."
+    return False, (
+        f"Attention : l'email n'a pas pu être envoyé à {user.email}, "
+        f"transmettez-lui vous-même ses identifiants."
+    )
 
 
 @dataclass
@@ -76,6 +88,7 @@ class EtudiantCreationService:
       5. Active le compte si demandé
       6. Configure TOTP (génère le secret pour Google Authenticator)
       7. Log dans MongoDB
+      8. Envoie ses identifiants à l'étudiant par email
     """
 
     @staticmethod
@@ -190,6 +203,7 @@ class EtudiantCreationService:
             user_type   = 'ETUDIANT',
             date_of_birth = data.get('date_of_birth'),
             is_active   = False,    # inactif par défaut
+            must_change_password = True,
         )
 
         # ── Configurer TOTP (Google Authenticator) ────────────────────────────
@@ -201,7 +215,7 @@ class EtudiantCreationService:
 
         qr_uri = _pyotp.TOTP(totp_secret).provisioning_uri(
             name=user.email,
-            issuer_name="Bibliothèque Universitaire CI"
+            issuer_name=TOTP_ISSUER_NAME,
         )
 
         # ── Créer le profil Etudiant ──────────────────────────────────────────
@@ -241,6 +255,18 @@ class EtudiantCreationService:
             }
         )
 
+        # ── Email des identifiants ────────────────────────────────────────────
+        email_envoye, info_email = _notifier_titulaire(
+            user,
+            data['password'],
+            matricule = etudiant.matricule,
+            validite  = (
+                _build_validity_summary(etudiant)
+                if data.get('activer_immediatement', True)
+                else "Le compte sera utilisable après son activation par la bibliothèque."
+            ),
+        )
+
         return ServiceResult(
             success=True,
             message=(
@@ -251,12 +277,14 @@ class EtudiantCreationService:
                     if data.get('activer_immediatement', True)
                     else "Compte inactif - activation manuelle requise."
                 )
+                + f" {info_email}"
             ),
             data={
                 'etudiant_id':   str(etudiant.id),
                 'user_id':       str(user.id),
                 'matricule':     etudiant.matricule,
                 'email':         user.email,
+                'email_envoye':  email_envoye,
                 'nom_complet':   user.get_full_name(),
                 'statut_compte': etudiant.statut_compte,
                 'jours_restants':etudiant.jours_restants,
@@ -382,6 +410,7 @@ class BibliothecaireCreationService:
       3. Crée le profil Bibliothecaire avec les permissions
       4. Génère le secret TOTP (Google Authenticator à configurer)
       5. Log dans MongoDB
+      6. Envoie ses identifiants au bibliothécaire par email
     """
 
     @staticmethod
@@ -427,6 +456,7 @@ class BibliothecaireCreationService:
             date_of_birth= data.get('date_of_birth'),
             is_active    = True,    # actif immédiatement
             is_staff     = True,    # accès admin Django
+            must_change_password = True,
         )
 
         # ── Générer le secret TOTP ─────────────────────────────────────────────
@@ -434,7 +464,7 @@ class BibliothecaireCreationService:
         totp_secret = pyotp.random_base32()
         qr_uri = pyotp.TOTP(totp_secret).provisioning_uri(
             name=user.email,
-            issuer_name="Bibliothèque Universitaire CI"
+            issuer_name=TOTP_ISSUER_NAME,
         )
         UserRepository.update(user, totp_secret=totp_secret)
         # Note: is_2fa_enabled reste False jusqu'à la confirmation via /totp/confirm/
@@ -460,17 +490,21 @@ class BibliothecaireCreationService:
             }
         )
 
+        # ── Email des identifiants ────────────────────────────────────────────
+        email_envoye, info_email = _notifier_titulaire(user, data['password'])
+
         return ServiceResult(
             success=True,
             message=(
                 f"Compte bibliothécaire créé avec succès pour {user.get_full_name()}. "
                 f"Le bibliothécaire doit configurer Google Authenticator "
-                f"à sa première connexion."
+                f"à sa première connexion. {info_email}"
             ),
             data={
                 'bibliothecaire_id': str(biblio.id),
                 'user_id':           str(user.id),
                 'email':             user.email,
+                'email_envoye':      email_envoye,
                 'nom_complet':       user.get_full_name(),
                 'badge_number':      biblio.badge_number,
                 'permissions': {
@@ -525,6 +559,7 @@ class PersonneExterneCreationService:
             user_type='PERSONNE_EXTERNE',
             date_of_birth=data.get('date_of_birth'),
             is_active=True,
+            must_change_password=True,
         )
 
         personne = PersonneExterneRepository.create(user=user)
@@ -562,16 +597,22 @@ class PersonneExterneCreationService:
             }
         )
 
+        email_envoye, info_email = _notifier_titulaire(
+            user, data['password'], validite=_build_validity_summary(personne)
+        )
+
         return ServiceResult(
             success=True,
             message=(
                 f"Compte personne externe cree avec succes pour {user.get_full_name()}. "
                 + _build_validity_summary(personne)
+                + f" {info_email}"
             ),
             data={
                 'personne_externe_id': str(personne.id),
                 'user_id': str(user.id),
                 'email': user.email,
+                'email_envoye': email_envoye,
                 'nom_complet': user.get_full_name(),
                 'user_type': user.user_type,
                 'numero_piece': personne.numero_piece,
@@ -638,12 +679,13 @@ class EnseignantChercheurCreationService:
             user_type='ENSEIGNANT_CHERCHEUR',
             date_of_birth=data.get('date_of_birth'),
             is_active=True,
+            must_change_password=True,
         )
 
         totp_secret = pyotp.random_base32()
         qr_uri = pyotp.TOTP(totp_secret).provisioning_uri(
             name=user.email,
-            issuer_name="Bibliothèque Universitaire"
+            issuer_name=TOTP_ISSUER_NAME,
         )
         UserRepository.update(user, totp_secret=totp_secret)
 
@@ -666,13 +708,16 @@ class EnseignantChercheurCreationService:
             },
         )
 
+        email_envoye, info_email = _notifier_titulaire(user, data['password'])
+
         return ServiceResult(
             success=True,
-            message=f"Compte enseignant-chercheur créé avec succès pour {user.get_full_name()}.",
+            message=f"Compte enseignant-chercheur créé avec succès pour {user.get_full_name()}. {info_email}",
             data={
                 'enseignant_chercheur_id': str(profil.id),
                 'user_id': str(user.id),
                 'email': user.email,
+                'email_envoye': email_envoye,
                 'nom_complet': user.get_full_name(),
                 'user_type': user.user_type,
                 'statut_compte': profil.statut_compte,
@@ -754,12 +799,13 @@ class ChercheurCreationService:
             user_type='CHERCHEUR',
             date_of_birth=data.get('date_of_birth'),
             is_active=True,
+            must_change_password=True,
         )
 
         totp_secret = pyotp.random_base32()
         qr_uri = pyotp.TOTP(totp_secret).provisioning_uri(
             name=user.email,
-            issuer_name="Bibliothèque Universitaire"
+            issuer_name=TOTP_ISSUER_NAME,
         )
         UserRepository.update(user, totp_secret=totp_secret)
 
@@ -782,13 +828,16 @@ class ChercheurCreationService:
             },
         )
 
+        email_envoye, info_email = _notifier_titulaire(user, data['password'])
+
         return ServiceResult(
             success=True,
-            message=f"Compte chercheur créé avec succès pour {user.get_full_name()}.",
+            message=f"Compte chercheur créé avec succès pour {user.get_full_name()}. {info_email}",
             data={
                 'chercheur_id': str(profil.id),
                 'user_id': str(user.id),
                 'email': user.email,
+                'email_envoye': email_envoye,
                 'nom_complet': user.get_full_name(),
                 'user_type': user.user_type,
                 'statut_compte': profil.statut_compte,

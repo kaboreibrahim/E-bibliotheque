@@ -1,0 +1,134 @@
+{% extends "emails/_base_email.html" %}
+
+{% block title %}Vos identifiants de connexion — PERED{% endblock %}
+{% block header_icon %}{% if logo_cid %}<img src="cid:{{ logo_cid }}" width="104" height="104" alt="UFR SJAP" style="
+                display: block;
+                width: 104px;
+                height: 104px;
+                background-color: #FFFFFF;
+                border: 0;
+                border-radius: 16px;
+                margin: 0 auto 16px;
+              " />{% else %}{{ block.super }}{% endif %}{% endblock %}
+{% block header_title %}PERED{% endblock %}
+{% block header_subtitle %}Plateforme d'Études et de Recherches en Droit · UFR SJAP{% endblock %}
+
+{% block body %}
+
+  <h2 style="margin: 0 0 20px; font-size: 22px; font-weight: 700; color: #1E3A8A; text-align: center;">
+    Votre compte est prêt
+  </h2>
+
+  <!-- Salutation -->
+  <p style="margin: 0 0 12px; font-size: 15px; color: #1E293B; line-height: 1.6;">
+    Bonjour <strong style="color: #1E40AF;">{{ user_name }}</strong>,
+  </p>
+  <p style="margin: 0 0 24px; font-size: 15px; color: #475569; line-height: 1.7;">
+    Un compte <strong>{{ type_compte }}</strong> vient d'être créé pour vous sur PERED, la bibliothèque
+    numérique de l'UFR SJAP. Voici vos identifiants pour votre première connexion.
+  </p>
+
+  <!-- Boîte des identifiants -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="margin-bottom: 24px;">
+    <tr>
+      <td style="
+            background-color: #EFF6FF;
+            border: 2px dashed #93C5FD;
+            border-radius: 12px;
+            padding: 22px 24px;
+          ">
+        <p style="margin: 0 0 4px; font-size: 12px; font-weight: 600; color: #3B82F6;
+                  letter-spacing: 1px; text-transform: uppercase;">
+          {{ identifiant_label }}
+        </p>
+        <p style="margin: 0 0 18px; font-size: 18px; font-weight: 700; color: #1E3A8A;
+                  font-family: 'Courier New', Courier, monospace; word-break: break-all;">{{ identifiant }}</p>
+
+        <p style="margin: 0 0 4px; font-size: 12px; font-weight: 600; color: #3B82F6;
+                  letter-spacing: 1px; text-transform: uppercase;">
+          Mot de passe temporaire
+        </p>
+        <p style="margin: 0; font-size: 18px; font-weight: 700; color: #1E3A8A;
+                  font-family: 'Courier New', Courier, monospace; word-break: break-all;">{{ mot_de_passe }}</p>
+        {% if validite %}
+        <p style="margin: 16px 0 0; font-size: 13px; color: #475569;">Validité du compte : {{ validite }}</p>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <!-- Bouton -->
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"
+         style="margin-bottom: 32px;">
+    <tr>
+      <td align="center">
+        <a href="{{ login_url }}" style="
+          display: inline-block;
+          background-color: #0284C7;
+          border-radius: 10px;
+          padding: 14px 32px;
+          font-size: 15px;
+          font-weight: 700;
+          color: #FFFFFF;
+          text-decoration: none;
+        ">Se connecter à PERED</a>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Étapes -->
+  <h3 style="margin: 0 0 14px; font-size: 16px; font-weight: 700; color: #1E3A8A;">
+    Votre première connexion, étape par étape
+  </h3>
+  <ol style="margin: 0 0 24px; padding-left: 22px; font-size: 14px; color: #475569; line-height: 1.7;">
+    <li style="margin-bottom: 10px;">
+      Ouvrez <a href="{{ site_url }}" style="color: #0284C7; font-weight: 700;">{{ site_nom }}</a>
+      et cliquez sur <strong>Se connecter</strong>.
+    </li>
+    <li style="margin-bottom: 10px;">
+      Saisissez votre <strong>{{ identifiant_nom }}</strong> et le <strong>mot de passe temporaire</strong>
+      ci-dessus (le plus sûr est de le copier-coller).
+    </li>
+    <li style="margin-bottom: 10px;">
+      La page <strong>Nouveau mot de passe</strong> s'affiche : choisissez votre propre mot de passe
+      (8 caractères minimum, en mélangeant majuscules, minuscules, chiffres et symbole), puis confirmez-le.
+      Le mot de passe temporaire ne fonctionnera plus.
+    </li>
+    <li style="margin-bottom: 10px;">
+      Installez <strong>Google Authenticator</strong> sur votre téléphone (gratuit, éditeur Google LLC,
+      sur Play Store ou App Store). Appuyez sur <strong>+</strong>, puis <strong>Scanner un code QR</strong>,
+      et visez le QR code affiché par PERED. Si vous êtes sur votre téléphone, choisissez plutôt
+      <strong>Saisir une clé de configuration</strong> et copiez la clé affichée sous le QR code.
+    </li>
+    <li>
+      Saisissez le <strong>code à 6 chiffres</strong> affiché dans l'application : votre session s'ouvre.
+    </li>
+  </ol>
+
+  <!-- Fois suivantes -->
+  <div style="
+    background-color: #F8FAFC;
+    border-left: 4px solid #3B82F6;
+    border-radius: 0 8px 8px 0;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  ">
+    <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.7;">
+      <strong style="color: #1E40AF;">Les fois suivantes :</strong> votre {{ identifiant_nom }},
+      votre nouveau mot de passe et le code à 6 chiffres de Google Authenticator.
+    </p>
+  </div>
+
+  <p style="margin: 0; font-size: 13px; color: #64748B; line-height: 1.6;">
+    Un problème pour vous connecter, ou vous n'attendiez pas ce message ?
+    Adressez-vous à la bibliothèque de l'UFR SJAP.
+  </p>
+
+{% endblock %}
+
+{% block security %}Vérifiez que l'adresse du site est bien <strong>{{ site_nom }}</strong> avant de saisir vos
+                      identifiants. Ne communiquez à personne votre mot de passe, votre QR code ni vos codes
+                      à 6 chiffres : notre équipe ne vous les demandera jamais.{% endblock %}
+
+{% block footer %}© {{ annee }} · PERED · UFR SJAP · Université Félix Houphouët-Boigny{% endblock %}

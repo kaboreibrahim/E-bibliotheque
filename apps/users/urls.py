@@ -39,6 +39,8 @@ from apps.users.views.auth_views import (
     # Password Reset
     PasswordResetRequestView,
     PasswordResetConfirmView,
+    # Première connexion
+    FirstPasswordChangeView,
     # Tokens
     TokenRefreshView,
     LogoutView,
@@ -140,6 +142,11 @@ auth_urlpatterns = [
         'password/reset/confirm/',
         PasswordResetConfirmView.as_view(),
         name='password-reset-confirm'
+    ),
+    path(
+        'password/first-change/',
+        FirstPasswordChangeView.as_view(),
+        name='password-first-change'
     ),
 
     # ══════════════════════════════════════════════════════

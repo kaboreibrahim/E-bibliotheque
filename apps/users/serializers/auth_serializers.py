@@ -314,6 +314,41 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return data
 
 
+class FirstPasswordChangeSerializer(serializers.Serializer):
+    """
+    Première connexion : remplacement du mot de passe temporaire reçu par email.
+    Données attendues :
+      {
+        "change_token":     "<password_change_token renvoyé à la connexion>",
+        "new_password":     "NouveauMotDePasse123!",
+        "confirm_password": "NouveauMotDePasse123!"
+      }
+    Les règles de sécurité du mot de passe sont vérifiées par le service, qui
+    connaît le compte concerné.
+    """
+    change_token     = serializers.CharField(
+        write_only=True,
+        help_text="`password_change_token` renvoyé à la connexion. Valable 15 minutes, usage unique."
+    )
+    new_password     = serializers.CharField(
+        write_only=True, min_length=8,
+        style={'input_type': 'password'},
+        help_text="Nouveau mot de passe (min. 8 caractères)."
+    )
+    confirm_password = serializers.CharField(
+        write_only=True,
+        style={'input_type': 'password'},
+        help_text="Confirmation du nouveau mot de passe."
+    )
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError(
+                {'confirm_password': "Les mots de passe ne correspondent pas."}
+            )
+        return data
+
+
 class TokenRefreshSerializer(serializers.Serializer):
     """
     Rafraîchissement du token d'accès.

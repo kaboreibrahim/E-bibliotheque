@@ -16,7 +16,9 @@ from io import BytesIO
 
 import pyotp
 
+from django.contrib.auth.password_validation import validate_password
 from django.core import signing
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.crypto import constant_time_compare, salted_hmac
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -28,7 +30,8 @@ from apps.history.models import HistoriqueActionService as HAS
 
 logger = logging.getLogger(__name__)
 
-TOTP_ISSUER_NAME = "Bibliothèque Universitaire CI"
+# Nom affiché par Google Authenticator à côté du code (celui des guides).
+TOTP_ISSUER_NAME = "PERED"
 TOTP_SETUP_TOKEN_SALT = "users.totp.setup"
 TOTP_SETUP_TOKEN_MAX_AGE_SECONDS = 900
 
@@ -39,6 +42,13 @@ TOTP_SETUP_TOKEN_MAX_AGE_SECONDS = 900
 # (usage unique) et expire au bout de 15 minutes.
 PASSWORD_RESET_TOKEN_SALT = "users.password.reset"
 PASSWORD_RESET_TOKEN_MAX_AGE_SECONDS = 900
+
+# Jeton de première connexion : remis avec la réponse de connexion tant que le
+# compte utilise le mot de passe temporaire reçu par email, et exigé par
+# /api/auth/password/first-change/. Mêmes garanties que le jeton ci-dessus
+# (15 minutes, usage unique).
+FIRST_PASSWORD_TOKEN_SALT = "users.password.first"
+FIRST_PASSWORD_TOKEN_MAX_AGE_SECONDS = 900
 
 
 @dataclass
@@ -902,6 +912,47 @@ class CommonAuthService:
         )
 
     @staticmethod
+    def change_first_password(change_token: str, new_password: str) -> AuthResult:
+        """
+        Première connexion : remplace le mot de passe temporaire reçu par email.
+        Si Google Authenticator n'est pas encore configuré, la réponse contient
+        les informations de l'étape suivante (QR code), comme à la connexion.
+        """
+        user = _get_user_from_first_password_token(change_token)
+        if not user:
+            message = "Cette étape a expiré. Reconnectez-vous pour recommencer."
+            return AuthResult(
+                success=False, message=message,
+                errors={'change_token': [message]}, http_status=400,
+            )
+
+        if user.check_password(new_password):
+            message = "Le nouveau mot de passe doit être différent du mot de passe temporaire."
+            return AuthResult(
+                success=False, message=message,
+                errors={'new_password': [message]}, http_status=400,
+            )
+        try:
+            validate_password(new_password, user=user)
+        except ValidationError as e:
+            return AuthResult(
+                success=False, message=' '.join(e.messages),
+                errors={'new_password': list(e.messages)}, http_status=400,
+            )
+
+        UserRepository.update_password(user, new_password)
+        HAS.log_utilisateur(
+            'MODIF', auteur=user, cible_user=user,
+            details={'champs': ['password'], 'source': 'first_login'}
+        )
+        return AuthResult(
+            success=True,
+            message="Votre nouveau mot de passe est enregistré.",
+            data={} if user.is_2fa_enabled else _build_login_totp_setup_payload(user),
+            http_status=200
+        )
+
+    @staticmethod
     def logout(user: User, refresh_token: str, ip: str = None) -> AuthResult:
         """Révoque le refresh token."""
         try:
@@ -1034,6 +1085,44 @@ def _check_password_reset_token(user: User, token: str) -> bool:
     )
 
 
+def _first_password_payload(user: User) -> dict:
+    """Champs ajoutés aux réponses de connexion tant que le mot de passe temporaire n'est pas remplacé."""
+    if not user.must_change_password:
+        return {}
+    return {
+        'requires_password_change': True,
+        'password_change_token': signing.dumps(
+            {
+                'user_id': str(user.id),
+                'fp': _password_fingerprint(user),
+                # Un jeton obtenu sans code TOTP ne vaut plus rien une fois la 2FA activée
+                '2fa': user.is_2fa_enabled,
+                'purpose': 'first_password',
+            },
+            salt=FIRST_PASSWORD_TOKEN_SALT,
+        ),
+    }
+
+
+def _get_user_from_first_password_token(token: str) -> User | None:
+    """Utilisateur pour lequel le jeton a été émis, ou None s'il est invalide, expiré ou déjà utilisé."""
+    try:
+        payload = signing.loads(token, salt=FIRST_PASSWORD_TOKEN_SALT, max_age=FIRST_PASSWORD_TOKEN_MAX_AGE_SECONDS)
+    except signing.BadSignature:  # inclut SignatureExpired
+        return None
+    user = UserRepository.get_by_id(payload.get('user_id'))
+    if (
+        user
+        and user.is_active
+        and user.must_change_password
+        and payload.get('purpose') == 'first_password'
+        and payload.get('2fa') == user.is_2fa_enabled
+        and constant_time_compare(payload.get('fp', ''), _password_fingerprint(user))
+    ):
+        return user
+    return None
+
+
 def _generate_totp_setup_token(user: User) -> str:
     return signing.dumps(
         {'user_id': str(user.id), 'purpose': 'totp_setup'},
@@ -1050,6 +1139,7 @@ def _build_login_totp_setup_payload(user: User) -> dict:
         'nom_complet': user.get_full_name(),
         'setup_token': _generate_totp_setup_token(user),
         'totp_setup': _prepare_totp_setup_payload(user, regenerate_secret=False),
+        **_first_password_payload(user),
     }
 
 
@@ -1061,6 +1151,7 @@ def _build_successful_auth_payload(user: User, tokens: dict) -> dict:
         'user_type': user.user_type,
         'email': user.email,
         'nom_complet': user.get_full_name(),
+        **_first_password_payload(user),
     }
 
     if user.user_type == 'ETUDIANT':

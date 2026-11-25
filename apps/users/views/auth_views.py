@@ -22,6 +22,7 @@ from apps.users.serializers.auth_serializers import (
     AdminLoginSerializer, AdminTOTPVerifySerializer,
     OTPSendSerializer, OTPVerifySerializer,
     PasswordResetRequestSerializer, PasswordResetConfirmSerializer,
+    FirstPasswordChangeSerializer,
     TokenRefreshSerializer, LogoutSerializer, TOTPSetupConfirmSerializer,
     EnseignantChercheurLoginSerializer, EnseignantChercheurTOTPVerifySerializer,
     ChercheurLoginSerializer, ChercheurTOTPVerifySerializer,
@@ -98,6 +99,14 @@ def _login_step1_data_serializer(name: str, user_type_help: str):
             'totp_setup': _login_totp_setup_serializer(
                 f'{name}TotpSetup',
                 required=False,
+            ),
+            'requires_password_change': drf_serializers.BooleanField(
+                required=False,
+                help_text="True tant que le mot de passe temporaire recu par email n'a pas ete remplace."
+            ),
+            'password_change_token': drf_serializers.CharField(
+                required=False,
+                help_text="Jeton a transmettre a /api/auth/password/first-change/."
             ),
         },
     )
@@ -195,7 +204,7 @@ POST /api/auth/etudiant/totp/verify/ ← étape 2 (code Google Authenticator)
                         'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature',
                         'totp_setup': {
                             'totp_secret': 'JBSWY3DPEHPK3PXP',
-                            'qr_uri': 'otpauth://totp/Bibliotheque%20Universitaire%20CI:etu%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Bibliotheque+Universitaire+CI',
+                            'qr_uri': 'otpauth://totp/PERED:etu%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=PERED',
                             'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
                             'instructions': [
                                 '1. Ouvrez Google Authenticator sur votre telephone.',
@@ -423,7 +432,7 @@ POST /api/auth/personne-externe/totp/verify/ ← étape 2 (TOTP obligatoire)
                         'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature',
                         'totp_setup': {
                             'totp_secret': 'JBSWY3DPEHPK3PXP',
-                            'qr_uri': 'otpauth://totp/Bibliotheque%20Universitaire%20CI:externe%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=Bibliotheque+Universitaire+CI',
+                            'qr_uri': 'otpauth://totp/PERED:externe%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=PERED',
                             'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
                             'instructions': [
                                 '1. Ouvrez Google Authenticator sur votre telephone.',
@@ -585,7 +594,7 @@ POST /api/auth/bibliothecaire/totp/verify/ ← étape 2 (TOTP obligatoire)
                         'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature',
                         'totp_setup': {
                             'totp_secret': 'JBSWY3DPEHPK3PXP',
-                            'qr_uri': 'otpauth://totp/Bibliotheque%20Universitaire%20CI:biblio.kone%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=Bibliotheque+Universitaire+CI',
+                            'qr_uri': 'otpauth://totp/PERED:biblio.kone%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=PERED',
                             'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
                             'instructions': [
                                 '1. Ouvrez Google Authenticator sur votre telephone.',
@@ -744,7 +753,7 @@ POST /api/auth/admin/totp/verify/  ← étape 2 (TOTP obligatoire)
                         'setup_token': 'eyJ1c2VyX2lkIjoiLi4uIn0:1abcde:signature',
                         'totp_setup': {
                             'totp_secret': 'JBSWY3DPEHPK3PXP',
-                            'qr_uri': 'otpauth://totp/Bibliotheque%20Universitaire%20CI:admin%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=Bibliotheque+Universitaire+CI',
+                            'qr_uri': 'otpauth://totp/PERED:admin%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=PERED',
                             'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
                             'instructions': [
                                 '1. Ouvrez Google Authenticator sur votre telephone.',
@@ -849,7 +858,7 @@ Après avoir scanné, confirmez avec `/api/auth/totp/confirm/`.
                     'message': 'Scannez ce QR code avec Google Authenticator.',
                     'data': {
                         'totp_secret': 'JBSWY3DPEHPK3PXP',
-                        'qr_uri':      'otpauth://totp/Biblioth%C3%A8que%20Universitaire%20CI:admin%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=Biblioth%C3%A8que+Universitaire+CI',
+                        'qr_uri':      'otpauth://totp/PERED:admin%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=PERED',
                         'qr_code_base64': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...',
                         'instructions': [
                             '1. Ouvrez Google Authenticator sur votre téléphone.',
@@ -1103,6 +1112,42 @@ class PasswordResetConfirmView(APIView):
             s.validated_data['email'],
             s.validated_data['new_password'],
             s.validated_data['reset_token'],
+        ))
+
+
+class FirstPasswordChangeView(APIView):
+    """POST /api/auth/password/first-change/ — Première connexion : remplace le mot de passe temporaire"""
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'first_password'
+
+    @extend_schema(
+        tags=['Auth — Mot de passe'],
+        summary='Première connexion : choisir son mot de passe',
+        description=(
+            "Remplace le mot de passe temporaire reçu par email. Exige le `password_change_token` "
+            "renvoyé à la connexion avec `requires_password_change` (valable 15 min, usage unique). "
+            "Si Google Authenticator n'est pas encore configuré, la réponse contient les mêmes "
+            "informations que l'étape 1 de la connexion (QR code, `setup_token`)."
+        ),
+        request=FirstPasswordChangeSerializer,
+        responses={
+            200: OpenApiResponse(description="Mot de passe enregistré"),
+            400: OpenApiResponse(description="Jeton invalide ou expiré / mot de passe non conforme"),
+        },
+        examples=[
+            OpenApiExample('Requête', request_only=True,
+                value={'change_token': '<jeton>', 'new_password': 'NouveauPass@2026!',
+                       'confirm_password': 'NouveauPass@2026!'}),
+        ]
+    )
+    def post(self, request):
+        s = FirstPasswordChangeSerializer(data=request.data)
+        if not s.is_valid():
+            return Response({'success': False, 'errors': s.errors, 'data': {}, 'message': 'Données invalides.'}, status=400)
+        return _resp(CommonAuthService.change_first_password(
+            s.validated_data['change_token'],
+            s.validated_data['new_password'],
         ))
 
 

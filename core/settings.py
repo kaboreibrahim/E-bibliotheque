@@ -112,7 +112,7 @@ AUTH_USER_MODEL='users.User'
  
 CORS_ALLOWED_ORIGINS = os.getenv(
     'CORS_ALLOWED_ORIGINS',
-'https://lapered.com,https://www.lapered.com,http://localhost:3000,http://localhost:5173,http://localhost:4200,https://salam-logistics.com'
+'https://lapered.com,https://www.lapered.com,http://localhost:3000,http://localhost:5173,http://localhost:4200,https://salam-logistics.com,https://www.salam-logistics.com'
 ).split(',')
 
 CSRF_TRUSTED_ORIGINS = [
@@ -120,6 +120,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://www.lapered.com",
     "https://otl-bulkliquid.com",
     "https://salam-logistics.com",
+    "https://www.salam-logistics.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -177,6 +178,9 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'login': '10000/min' if RUNNING_TESTS else '5/min',
         'totp': '10000/min' if RUNNING_TESTS else '5/min',
+        # Compteur distinct de 'login' : une connexion par email peut deja consommer
+        # 5 appels 'login' (un essai par role) juste avant le changement de mot de passe.
+        'first_password': '10000/min' if RUNNING_TESTS else '10/min',
     },
 }
 
@@ -386,6 +390,17 @@ EMAIL_USE_SSL = config('EMAIL_USE_SSL', default=True, cast=bool)
 EMAIL_USE_TLS = False
 EMAIL_HOST_USER = config('EMAIL_HOST_USER', default='')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD', default='')
+# Sans delai maximal, un serveur SMTP injoignable bloquerait la creation des comptes.
+EMAIL_TIMEOUT = config('EMAIL_TIMEOUT', default=15, cast=int)
+# L'expediteur doit etre la boite authentifiee : la valeur par defaut de Django
+# (webmaster@localhost) est refusee ou classee en spam par les serveurs de messagerie.
+DEFAULT_FROM_EMAIL = config(
+    'DEFAULT_FROM_EMAIL',
+    default=f"PERED <{EMAIL_HOST_USER or 'contact@otl-bulkliquid.com'}>",
+)
+
+# Adresse publique du site, utilisee dans les liens des emails
+FRONTEND_URL = config('FRONTEND_URL', default='https://salam-logistics.com').rstrip('/')
 
 # =============================================================================
 # 📋  LOGGING (TECH-004)

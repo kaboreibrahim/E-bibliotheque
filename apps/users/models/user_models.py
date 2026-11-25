@@ -117,7 +117,14 @@ class User(AbstractUser, SafeDeleteModel):
         null=True, blank=True,
         verbose_name="Dernière vérification TOTP"
     )
- 
+
+    # ── Mot de passe temporaire ───────────────────────────────────────────────
+    must_change_password = models.BooleanField(
+        default=False,
+        verbose_name="Changement de mot de passe requis",
+        help_text="Vrai tant que le mot de passe temporaire reçu par email n'a pas été remplacé."
+    )
+
     # ── Statut ────────────────────────────────────────────────────────────────
     is_active  = models.BooleanField(default=True, verbose_name="Compte actif")
     is_staff   = models.BooleanField(default=False)

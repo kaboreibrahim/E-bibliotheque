@@ -315,6 +315,7 @@ class EtudiantCreateView(APIView):
                         'user_id':        s.UUIDField(help_text="UUID du compte User"),
                         'matricule':      s.CharField(help_text="ETU202512345 (généré automatiquement)"),
                         'email':          s.EmailField(),
+                        'email_envoye':   s.BooleanField(help_text="False si l'email des identifiants n'a pas pu partir"),
                         'nom_complet':    s.CharField(),
                         'statut_compte':  s.CharField(help_text="⚪ Jamais activé"),
                         'jours_restants': s.IntegerField(allow_null=True, help_text="null — pas encore activé"),
@@ -408,7 +409,7 @@ class EtudiantCreateView(APIView):
                         "compte_expire_le": None,
                         "totp_setup": {
                             "totp_secret":  "JBSWY3DPEHPK3PXP",
-                            "qr_uri":       "otpauth://totp/Biblioth%C3%A8que:etu.amani.l1%40etud-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=Biblioth%C3%A8que+Universitaire+CI",
+                            "qr_uri":       "otpauth://totp/PERED:etu.amani.l1%40etud-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=PERED",
                             "instructions": "Transmettez ces informations à l'étudiant pour qu'il configure Google Authenticator."
                         }
                     },
@@ -1040,6 +1041,7 @@ class BibliothecaireCreateView(APIView):
                         'bibliothecaire_id': s.UUIDField(),
                         'user_id':           s.UUIDField(),
                         'email':             s.EmailField(),
+                        'email_envoye':      s.BooleanField(help_text="False si l'email des identifiants n'a pas pu partir"),
                         'nom_complet':       s.CharField(),
                         'badge_number':      s.CharField(allow_null=True),
                         'permissions': inline_serializer('BiblioPerms', fields={
@@ -1108,7 +1110,7 @@ class BibliothecaireCreateView(APIView):
                         },
                         "totp_setup": {
                             "totp_secret": "JBSWY3DPEHPK3PXP",
-                            "qr_uri":      "otpauth://totp/Biblioth%C3%A8que:biblio.kone%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=Biblioth%C3%A8que+Universitaire+CI",
+                            "qr_uri":      "otpauth://totp/PERED:biblio.kone%40universite-ci.edu?secret=JBSWY3DPEHPK3PXP&issuer=PERED",
                             "instructions": "Transmettez ces informations au bibliothécaire. Il devra scanner ce QR code avec Google Authenticator et confirmer via POST /api/auth/totp/confirm/."
                         }
                     },
@@ -1300,6 +1302,7 @@ son application avant sa première connexion.
                         'enseignant_chercheur_id': s.UUIDField(),
                         'user_id': s.UUIDField(),
                         'email': s.EmailField(),
+                        'email_envoye': s.BooleanField(help_text="False si l'email des identifiants n'a pas pu partir"),
                         'nom_complet': s.CharField(),
                         'user_type': s.CharField(),
                         'statut_compte': s.CharField(),
@@ -1515,6 +1518,7 @@ son application avant sa première connexion.
                         'chercheur_id': s.UUIDField(),
                         'user_id': s.UUIDField(),
                         'email': s.EmailField(),
+                        'email_envoye': s.BooleanField(help_text="False si l'email des identifiants n'a pas pu partir"),
                         'nom_complet': s.CharField(),
                         'user_type': s.CharField(),
                         'statut_compte': s.CharField(),

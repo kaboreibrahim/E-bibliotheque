@@ -7,6 +7,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.history.models import HistoriqueActionService as HAS
+from apps.users.repositories.user_repository import UserRepository
 from apps.users.serializers.profile_serializers import (
     PasswordChangeSerializer,
     UserOwnProfileSerializer,
@@ -185,8 +186,7 @@ class PasswordChangeView(APIView):
             }, status=400)
 
         user = request.user
-        user.set_password(serializer.validated_data['new_password'])
-        user.save(update_fields=['password', 'updated_at'])
+        UserRepository.update_password(user, serializer.validated_data['new_password'])
 
         HAS.log_utilisateur(
             'MODIF',

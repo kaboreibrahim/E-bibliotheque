@@ -1,0 +1,24 @@
+{% autoescape off %}Bonjour {{ user_name }},
+
+Un compte {{ type_compte }} vient d'être créé pour vous sur PERED, la bibliothèque numérique de l'UFR SJAP.
+
+{{ identifiant_label }} : {{ identifiant }}
+Mot de passe temporaire : {{ mot_de_passe }}
+{% if validite %}Validité du compte : {{ validite }}
+{% endif %}
+VOTRE PREMIÈRE CONNEXION
+
+1. Ouvrez {{ login_url }}
+2. Saisissez votre {{ identifiant_nom }} et le mot de passe temporaire ci-dessus.
+3. La page « Nouveau mot de passe » s'affiche : choisissez votre propre mot de passe (8 caractères minimum, en mélangeant majuscules, minuscules, chiffres et symbole), puis confirmez-le. Le mot de passe temporaire ne fonctionnera plus.
+4. Installez Google Authenticator sur votre téléphone (gratuit, éditeur Google LLC). Appuyez sur +, puis « Scanner un code QR », et visez le QR code affiché par PERED. Si vous êtes sur votre téléphone, choisissez plutôt « Saisir une clé de configuration » et copiez la clé affichée sous le QR code.
+5. Saisissez le code à 6 chiffres affiché dans l'application : votre session s'ouvre.
+
+Les fois suivantes : votre {{ identifiant_nom }}, votre nouveau mot de passe et le code à 6 chiffres de Google Authenticator.
+
+Sécurité : vérifiez que l'adresse du site est bien {{ site_nom }} avant de saisir vos identifiants. Ne communiquez à personne votre mot de passe, votre QR code ni vos codes à 6 chiffres : notre équipe ne vous les demandera jamais.
+
+Un problème pour vous connecter, ou vous n'attendiez pas ce message ? Adressez-vous à la bibliothèque de l'UFR SJAP.
+
+PERED · UFR SJAP · Université Félix Houphouët-Boigny
+{% endautoescape %}
